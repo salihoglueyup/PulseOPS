@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulseops"
+version = "1.0.0"
+description = "PulseOps (PulseTUI): Agentless Real-Time Server, Web & Infrastructure Observability TUI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=0.70.0",
+    "rich>=13.7.0",
+    "psutil>=5.9.0",
+    "pydantic>=2.5.0",
+    "paramiko>=3.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+]
+
+[project.scripts]
+pulseops = "cli:main"
+pulsetui = "cli:main"
+server-tui = "cli:main"
+
+[tool.setuptools]
+py-modules = ["cli", "main"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["collectors*", "models*", "ui*"]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

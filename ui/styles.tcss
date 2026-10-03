@@ -1,0 +1,318 @@
+/* ==========================================================================
+   PulseOps (PulseTUI) - Clean Minimalist Silver & Charcoal Design System
+   Net gümüş beyazı metinler, kömür siyahı zemin, sıfır göz yorgunluğu
+   ========================================================================== */
+
+Screen {
+    background: #0d1117;
+    color: #f0f6fc;
+    layout: vertical;
+    overflow: hidden;
+}
+
+/* Theme variations */
+Screen.theme-github {
+    background: #0d1117;
+    color: #f0f6fc;
+}
+
+Screen.theme-tokyonight {
+    background: #1a1b26;
+    color: #c0caf5;
+}
+
+Screen.theme-dracula {
+    background: #282a36;
+    color: #f8f8f2;
+}
+
+Screen.theme-nord {
+    background: #2e3440;
+    color: #eceff4;
+}
+
+Screen.theme-catppuccin {
+    background: #1e1e2e;
+    color: #cdd6f4;
+}
+
+Screen.theme-matrix {
+    background: #0d1117;
+    color: #00ff66;
+}
+
+/* Header Bar */
+HeaderBar {
+    dock: top;
+    height: 1;
+    background: #161b22;
+    color: #f0f6fc;
+    border-bottom: solid #30363d;
+}
+
+/* Search Bar */
+#search-bar {
+    height: 3;
+    margin: 0 1;
+    display: none;
+}
+
+#search-bar.visible {
+    display: block;
+}
+
+#search-input {
+    background: #010409;
+    border: solid #8b949e;
+    color: #f0f6fc;
+}
+
+/* Tabs Navigation */
+TabbedContent {
+    height: 1fr;
+    background: #0d1117;
+}
+
+Tabs {
+    background: #161b22;
+    color: #8b949e;
+    height: 2;
+}
+
+Tabs Underline {
+    color: #f0f6fc;
+}
+
+Tabs .underline--bar {
+    background: #f0f6fc;
+}
+
+Tab {
+    padding: 0 1;
+    color: #8b949e;
+}
+
+Tab:hover {
+    color: #f0f6fc;
+    background: #21262d;
+}
+
+Tab.-active {
+    background: #21262d;
+    color: #f0f6fc;
+    text-style: bold;
+}
+
+TabPane {
+    padding: 0;
+}
+
+/* Panel Layouts */
+VitalsPanel {
+    height: 9;
+    margin: 0 1;
+}
+
+AlertTicker {
+    height: 3;
+    margin: 0 1;
+}
+
+PortProxyTable {
+    height: 1fr;
+    min-height: 7;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+#bottom-row {
+    height: 1fr;
+    min-height: 8;
+    layout: horizontal;
+    margin: 0 1;
+}
+
+DashboardStatusBar {
+    height: 3;
+    margin: 0 1;
+}
+
+BackupPanel {
+    width: 1fr;
+    margin-right: 1;
+    overflow-y: auto;
+}
+
+ServicePanel {
+    width: 1fr;
+    overflow-y: auto;
+}
+
+AllPortsTable {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+TopProcessesPanel {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+LogViewerWidget {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+BackupDetailView {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+ServicesTable {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+DatabasePanel {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+SecurityPanel {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+StoragePanel {
+    height: 1fr;
+    margin: 0 1;
+    overflow-y: auto;
+}
+
+DashboardStatusBar {
+    height: 3;
+    margin: 0 1;
+}
+
+Footer {
+    background: #161b22;
+    color: #8b949e;
+    border-top: solid #30363d;
+}
+
+/* Modals & Dialogs */
+PortFinderModal, AlertsModal, ConfigViewerModal {
+    align: center middle;
+}
+
+#port-finder-dialog, #alerts-dialog {
+    width: 84;
+    max-height: 85%;
+    background: #161b22;
+    border: heavy #8b949e;
+    padding: 1 2;
+}
+
+#config-content {
+    height: 1fr;
+    min-height: 14;
+    background: #010409;
+    border: solid #30363d;
+    color: #f0f6fc;
+}
+
+#pf-title, #alerts-title {
+    text-align: center;
+    color: #f0f6fc;
+    text-style: bold;
+}
+
+#pf-presets {
+    height: 3;
+    margin-bottom: 1;
+    align: center middle;
+}
+
+.preset-btn {
+    min-width: 14;
+    height: 3;
+    margin: 0 1;
+    background: #21262d;
+    color: #58a6ff;
+    border: solid #30363d;
+}
+
+.preset-btn:hover {
+    background: #30363d;
+    color: #ffffff;
+}
+
+#pf-inputs {
+    height: 3;
+    margin-bottom: 1;
+    align: center middle;
+}
+
+.pf-label {
+    margin-top: 1;
+    color: #8b949e;
+}
+
+.pf-input {
+    width: 12;
+    background: #010409;
+    border: solid #30363d;
+    color: #f0f6fc;
+}
+
+#btn-scan {
+    margin-left: 2;
+    background: #238636;
+    color: #ffffff;
+    text-style: bold;
+}
+
+#btn-scan:hover {
+    background: #2ea043;
+}
+
+#pf-results, #alerts-content {
+    height: 1fr;
+    min-height: 12;
+}
+
+#pf-buttons, #alerts-buttons {
+    height: 3;
+    align: right middle;
+    margin-top: 1;
+}
+
+/* Global Buttons */
+Button {
+    background: #21262d;
+    color: #f0f6fc;
+    border: solid #30363d;
+}
+
+Button:hover {
+    background: #30363d;
+    color: #ffffff;
+}
+
+Button.-primary {
+    background: #f0f6fc;
+    color: #0d1117;
+    border: none;
+    text-style: bold;
+}
+
+Button.-primary:hover {
+    background: #ffffff;
+}
