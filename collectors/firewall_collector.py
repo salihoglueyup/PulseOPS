@@ -40,4 +40,4 @@ class FirewallCollector:
             except Exception:
                 pass
 
-        return FirewallStatus(is_active=True, backend="Standart", summary="Filtreleme Aktif")
+        return FirewallStatus(is_active=False, backend="Bilinmiyor", summary="Bilinmiyor (durum okunamadı)", known=False)

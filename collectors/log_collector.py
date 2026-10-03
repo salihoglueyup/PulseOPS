@@ -15,6 +15,19 @@ SAMPLE_LOG_PATTERNS = [
     ("GET", "/feed", 200, "6.2ms", "blog.sirket-ana.com"),
 ]
 
+def tail_lines(path: Path, count: int, max_bytes: int = 64 * 1024) -> list[str]:
+    """Last `count` lines of a file without reading it whole (access logs can be gigabytes)."""
+    with open(path, "rb") as f:
+        f.seek(0, 2)
+        size = f.tell()
+        f.seek(max(0, size - max_bytes))
+        data = f.read().decode("utf-8", errors="replace")
+    lines = data.splitlines()
+    if size > max_bytes and lines:
+        lines = lines[1:]  # first line is probably cut in half
+    return lines[-count:]
+
+
 class LogCollector:
     """Collects recent log entries or generates simulated web traffic for demo mode in corporate style."""
 
@@ -36,8 +49,7 @@ class LogCollector:
         nginx_log = Path("/var/log/nginx/access.log")
         if nginx_log.exists():
             try:
-                lines = nginx_log.read_text(encoding="utf-8", errors="ignore").splitlines()
-                return lines[-35:]
+                return tail_lines(nginx_log, 35)
             except Exception:
                 pass
 

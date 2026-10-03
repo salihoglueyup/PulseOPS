@@ -11,6 +11,7 @@ class SecurityOverview(BaseModel):
     ssh: SSHSecurityAudit = Field(default_factory=SSHSecurityAudit)
     firewall_name: str = "UFW"
     firewall_active: bool = True
+    firewall_known: bool = True
     firewall_rules_count: int = 8
     open_ports_count: int = 0
     exposed_risky_ports: list[int] = Field(default_factory=list)

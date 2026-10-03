@@ -2,6 +2,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from models.system import FirewallStatus
 from models.security import SecurityOverview, SSHSecurityAudit
 from models.ports import ListeningPort, PortExposure
 
@@ -9,29 +10,32 @@ class SecurityCollector:
     """Evaluates host security posture, SSH hardening, and firewall rules."""
 
     def parse_sshd_config_text(self, text: str) -> SSHSecurityAudit:
-        port = 22
-        root_login = "no"
-        pwd_auth = "yes"
-        pubkey_auth = "yes"
+        """Parses sshd_config text or `sshd -T` output.
 
+        Follows sshd semantics: the first value of a keyword wins, `Match` blocks are conditional and
+        end the global section, and unset keywords take OpenSSH's defaults.
+        """
+        values: dict[str, str] = {}
         for line in text.splitlines():
             line_str = line.strip()
             if not line_str or line_str.startswith("#"):
                 continue
-
             parts = line_str.split(maxsplit=1)
-            if len(parts) == 2:
-                key, val = parts[0].lower(), parts[1].strip().lower()
-                if key == "port" and val.isdigit():
-                    port = int(val)
-                elif key == "permitrootlogin":
-                    root_login = val
-                elif key == "passwordauthentication":
-                    pwd_auth = val
-                elif key == "pubkeyauthentication":
-                    pubkey_auth = val
+            key = parts[0].lower()
+            if key == "match":
+                break
+            if len(parts) == 2 and key not in values:
+                values[key] = parts[1].strip().strip('"').lower()
 
-        is_hardened = (root_login in ("no", "prohibit-password")) and (pubkey_auth == "yes")
+        port_value = values.get("port", "22")
+        port = int(port_value) if port_value.isdigit() else 22
+        root_login = values.get("permitrootlogin", "prohibit-password")
+        if root_login == "without-password":  # deprecated alias, and what `sshd -T` prints
+            root_login = "prohibit-password"
+        pwd_auth = values.get("passwordauthentication", "yes")
+        pubkey_auth = values.get("pubkeyauthentication", "yes")
+
+        is_hardened = root_login in ("no", "prohibit-password") and pubkey_auth == "yes" and pwd_auth == "no"
         return SSHSecurityAudit(
             port=port,
             permit_root_login=root_login,
@@ -63,25 +67,22 @@ class SecurityCollector:
             )
 
         # 2. Firewall
-        fw_name = "UFW"
-        fw_active = True
-        rules_count = 6
-
+        from collectors.firewall_collector import FirewallCollector
+        firewall = FirewallCollector().collect()
         if shutil.which("ufw"):
             try:
                 res = subprocess.run(["ufw", "status", "numbered"], capture_output=True, text=True, timeout=2)
-                fw_active = "active" in res.stdout.lower() and "inactive" not in res.stdout.lower()
-                rules_count = len([l for l in res.stdout.splitlines() if re.match(r'^\s*\[\s*\d+\]', l)])
+                firewall.rules_count = len([l for l in res.stdout.splitlines() if re.match(r'^\s*\[\s*\d+\]', l)])
             except Exception:
                 pass
-        elif shutil.which("netsh"):
-            fw_name = "Windows Firewall"
-            try:
-                res = subprocess.run(["netsh", "advfirewall", "show", "currentprofile"], capture_output=True, text=True, timeout=2)
-                fw_active = "ON" in res.stdout.upper()
-                rules_count = 12
-            except Exception:
-                pass
+        return self.build_overview(ssh_audit, firewall, ports)
+
+    def build_overview(self, ssh_audit: SSHSecurityAudit, firewall: FirewallStatus, ports: list[ListeningPort]) -> SecurityOverview:
+        """Combines SSH audit, firewall state and listening ports into the security overview."""
+        fw_name = firewall.backend
+        fw_active = firewall.is_active
+        fw_known = firewall.known
+        rules_count = firewall.rules_count
 
         # 3. Risky ports (Deduplicated)
         risky = sorted(list(set(p.port for p in ports if p.exposure == PortExposure.EXPOSED_RISK)))
@@ -96,7 +97,9 @@ class SecurityCollector:
         else:
             recs.append("[GUVENLI] SSH: Port 22 dinlenmiyor, makine disaridan uzaktan SSH saldirisina kapali.")
 
-        if not fw_active:
+        if not fw_known:
+            recs.append("[BILGI] Guvenlik duvari durumu okunamadi; tam denetim icin `sudo pulseops` ile calistirin.")
+        elif not fw_active:
             recs.append("[DIKKAT] GUVENLIK DUVARI KAPALI! Guvenlik duvarini aktif edin.")
         else:
             recs.append(f"[GUVENLI] {fw_name} devrede ve ag trafigini filtreliyor ({rules_count} kural aktif).")
@@ -120,12 +123,13 @@ class SecurityCollector:
         if not recs:
             recs.append("[GUVENLI] Sunucu temel guvenlik kurallarina uygun ve sertlestirilmis durumda.")
 
-        overall = "GÜVENLİ" if (fw_active and not db_risks and ssh_audit.permit_root_login != "yes") else "DİKKAT GEREKTİRİYOR"
+        overall = "GÜVENLİ" if ((fw_active or not fw_known) and not db_risks and ssh_audit.permit_root_login != "yes") else "DİKKAT GEREKTİRİYOR"
 
         return SecurityOverview(
             ssh=ssh_audit,
             firewall_name=fw_name,
             firewall_active=fw_active,
+            firewall_known=fw_known,
             firewall_rules_count=rules_count,
             open_ports_count=len(ports),
             exposed_risky_ports=risky,

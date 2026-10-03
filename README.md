@@ -97,7 +97,8 @@ pulseops root@192.168.1.50 --port 2222      # anahtar verilmezse parola güvenli
 
 | Seçenek | Ne işe yarar |
 | :--- | :--- |
-| `--interval 5` | Yenileme aralığı (saniye). Yavaş SSH bağlantılarında ve sunucu yükünü azaltmak için artırın. |
+| `--interval 5` | Hızlı metriklerin (CPU, RAM, port, süreç) yenileme aralığı, varsayılan 2 sn. Yavaş SSH bağlantılarında artırın. |
+| `--slow-interval 60` | Ağır kontrollerin (servis, docker, nginx, yedek, güvenlik duvarı) aralığı, varsayılan 30 sn. `r` tuşu hepsini anında yeniler. |
 | `--no-color` | Renksiz (gri tonlamalı) çıktı. `NO_COLOR` ortam değişkeni de desteklenir. |
 | `--ascii` | Emoji / Unicode desteklemeyen terminaller için yalnızca ASCII. UTF-8 olmayan terminallerde otomatik açılır. |
 | `--no-mouse` | Fare desteğini kapatır; tmux/screen içinde metin seçimi için. |
@@ -120,6 +121,40 @@ pulseops check                  # sağlık skoruna göre çıkış kodu
 ```
 
 > **İpucu:** Tüm komutlar uzak sunucu için de çalışır: `pulseops check root@sunucu --key ~/.ssh/id_ed25519`
+
+
+### 5. Yapılandırma
+
+```bash
+pulseops config           # geçerli ayarlar ve okunan dosyalar
+pulseops config --init    # ~/.config/pulseops/config.toml şablonunu oluşturur
+```
+
+Ayarlar önce `/etc/pulseops/config.toml` (sunucu geneli), sonra `~/.config/pulseops/config.toml` dosyasından okunur; komut satırı bayrakları ikisini de ezer. Yazım hatalı bir anahtar sessizce yok sayılmaz, hata olarak raporlanır.
+
+```toml
+[general]
+interval = 2          # hızlı metrikler (sn)
+slow_interval = 30    # servis, docker, nginx, yedek (sn)
+use_sudo = true       # root değilken yavaş kontrollerde parolasız `sudo -n`
+
+[check]               # `pulseops check` eşikleri
+warn = 80
+crit = 50
+
+[alerts]              # uyarı eşikleri
+disk_percent = 80
+memory_percent = 85
+ssl_days = 7
+```
+
+Sorun giderme için log dosyası: `~/.cache/pulseops/pulseops.log`.
+
+### 6. Nasıl Çalışır?
+
+Yerel modda da SSH modunda da hedef makinede aynı salt-okunur shell betiği (`sh -s`) çalışır ve çıktısı aynı kodla ayrıştırılır. Ucuz ve sık değişen metrikler (CPU, RAM, ağ, portlar, süreçler) her 2 saniyede, `systemctl`, `docker`, `nginx -T` gibi ağır kontroller 30 saniyede bir toplanır; veri toplama ayrı bir thread'de yürür, arayüz hiç beklemez. 4 çekirdekli bir sunucuda canlı modun kendi tükettiği CPU tek çekirdeğin yaklaşık %2'si kadardır (`--interval 5` ile ~%1.3).
+
+`sudo` root olarak hiç, hızlı kontrollerde hiçbir zaman kullanılmaz; root olmayan kullanıcıda yalnızca parolasız sudo varsa ve yavaş kontrollerde `sudo -n` ile denenir (her sudo çağrısı sunucunun auth log'una yazılır, PulseOps bu logları doldurmaz). Okunamayan bir veri, ör. yetkisiz kullanıcıda güvenlik duvarı durumu, "aktif" sayılmaz: **bilinmiyor** olarak gösterilir.
 
 ---
 

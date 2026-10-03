@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Tuple
 from models.system import SystemSnapshot
 from models.ports import ListeningPort
@@ -14,10 +14,51 @@ from collectors.docker_collector import DockerCollector
 from collectors.mock_collector import MockCollector
 
 class BaseCollector(ABC):
-    """Abstract collector providing standard snapshot retrieval."""
+    """Abstract collector. `collect()` is the single entry point used by the TUI and the CLI.
 
-    @abstractmethod
+    Legacy collectors implement `poll()` + `poll_*()`; the default `collect()` assembles them and
+    caches the slow parts between `include_slow=True` refreshes.
+    """
+
+    def collect(self, include_slow: bool = True, include_logs: bool = True):
+        import time
+        from models.telemetry import Telemetry
+
+        snapshot, ports, routes, backups, containers = self.poll()
+        now = time.time()
+        cache = getattr(self, "_slow_cache", None)
+        if include_slow or cache is None:
+            backup_data = self.poll_backup_data()
+            cache = {
+                "backup_data": backup_data,
+                "backups": backup_data.tasks or backups,
+                "services": self.poll_services(),
+                "databases": self.poll_databases(ports, containers),
+                "security": self.poll_security(ports),
+                "storage": self.poll_storage(),
+                "privileges": self.poll_privileges(),
+                "slow_collected_at": now,
+            }
+            self._slow_cache = cache
+        if include_logs or not hasattr(self, "_last_logs"):
+            self._last_logs = self.poll_logs()
+        return Telemetry(
+            snapshot=snapshot,
+            ports=ports,
+            routes=routes,
+            containers=containers,
+            logs=self._last_logs,
+            collected_at=now,
+            **cache,
+        )
+
     def poll(self) -> Tuple[SystemSnapshot, list[ListeningPort], list[ProxyRoute], list[BackupTask], list[ContainerSummary]]:
+        raise NotImplementedError
+
+    def poll_logs(self) -> list[str]:
+        return []
+
+    def close(self) -> None:
         pass
 
     def poll_backup_data(self):
@@ -62,6 +103,11 @@ class LocalLiveCollector(BaseCollector):
         self.security = SecurityCollector()
         self.storage = StorageCollector()
         self._privileges = None
+        from collectors.log_collector import LogCollector
+        self._log_collector = LogCollector()
+
+    def poll_logs(self) -> list[str]:
+        return self._log_collector.poll_live()
 
     def poll(self) -> Tuple[SystemSnapshot, list[ListeningPort], list[ProxyRoute], list[BackupTask], list[ContainerSummary]]:
         snapshot = self.system.collect_snapshot()
@@ -111,6 +157,11 @@ class DemoCollector(BaseCollector):
 
     def __init__(self):
         self.mock = MockCollector()
+        from collectors.log_collector import LogCollector
+        self._log_collector = LogCollector()
+
+    def poll_logs(self) -> list[str]:
+        return self._log_collector.poll_mock()
 
     def poll(self) -> Tuple[SystemSnapshot, list[ListeningPort], list[ProxyRoute], list[BackupTask], list[ContainerSummary]]:
         snapshot = self.mock.get_snapshot()
@@ -134,3 +185,15 @@ class DemoCollector(BaseCollector):
 
     def poll_storage(self):
         return self.mock.get_storage()
+
+
+def create_local_collector(use_sudo: bool = True) -> BaseCollector:
+    """Linux: the shared shell probe (same code path as SSH). Elsewhere: the psutil-based collector."""
+    import platform
+
+    if platform.system() == "Linux":
+        from collectors.probe_collector import ProbeCollector
+        from collectors.transport import LocalTransport
+
+        return ProbeCollector(LocalTransport(), use_sudo=use_sudo)
+    return LocalLiveCollector()

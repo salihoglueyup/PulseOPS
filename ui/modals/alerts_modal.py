@@ -105,7 +105,7 @@ class AlertsModal(ModalScreen):
             )
 
         # 6. Firewall disabled
-        if not self.snapshot.firewall.is_active:
+        if self.snapshot.firewall.known and not self.snapshot.firewall.is_active:
             alerts_count += 1
             table.add_row(
                 Text("KRİTİK", style="bold #ffffff on #da3633"),

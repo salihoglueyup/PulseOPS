@@ -137,8 +137,12 @@ class VitalsPanel(Widget):
         net_text.append("Trend: ", style="#8b949e")
         net_text.append(f"{net_spark}\n", style="#c9d1d9")
 
-        fw_status = "Güvenlik Duvarı: AKTİF ✓" if snap.firewall.is_active else "Güvenlik Duvarı: KAPALI ✗"
-        fw_style = "bold #3fb950" if snap.firewall.is_active else "bold #f85149"
+        if not snap.firewall.known:
+            fw_status, fw_style = "Güvenlik Duvarı: BİLİNMİYOR (root gerekli)", "bold #d29922"
+        elif snap.firewall.is_active:
+            fw_status, fw_style = "Güvenlik Duvarı: AKTİF ✓", "bold #3fb950"
+        else:
+            fw_status, fw_style = "Güvenlik Duvarı: KAPALI ✗", "bold #f85149"
         net_text.append(f"{fw_status}", style=fw_style)
 
         vitals_grid.add_row(cpu_text, ram_text, disk_text, net_text)

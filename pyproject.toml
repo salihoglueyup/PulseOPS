@@ -14,6 +14,7 @@ dependencies = [
     "psutil>=5.9.0",
     "pydantic>=2.5.0",
     "paramiko>=3.4.0",
+    "tomli>=2.0.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +30,7 @@ pulsetui = "cli:main"
 server-tui = "cli:main"
 
 [tool.setuptools]
-py-modules = ["cli", "main", "commands", "installer", "version"]
+py-modules = ["cli", "main", "commands", "installer", "version", "pulseops_config", "logging_setup"]
 
 [tool.setuptools.dynamic]
 version = {attr = "version.__version__"}

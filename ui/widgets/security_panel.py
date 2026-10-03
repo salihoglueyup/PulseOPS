@@ -39,9 +39,13 @@ class SecurityPanel(Widget):
 
         # Firewall card
         fw_text = Text()
-        fw_style = "bold #3fb950" if sec.firewall_active else "bold #f85149"
-        fw_text.append(f"{sec.firewall_name}: {'AKTİF' if sec.firewall_active else 'KAPALI'}\n", style=fw_style)
-        fw_text.append(f"Kurallar: {sec.firewall_rules_count} kural devrede", style="#8b949e")
+        if not sec.firewall_known:
+            fw_text.append(f"{sec.firewall_name}: BİLİNMİYOR\n", style="bold #d29922")
+            fw_text.append("Okumak için root gerekli", style="#8b949e")
+        else:
+            fw_style = "bold #3fb950" if sec.firewall_active else "bold #f85149"
+            fw_text.append(f"{sec.firewall_name}: {'AKTİF' if sec.firewall_active else 'KAPALI'}\n", style=fw_style)
+            fw_text.append(f"Kurallar: {sec.firewall_rules_count} kural devrede", style="#8b949e")
 
         # Port card
         port_text = Text()

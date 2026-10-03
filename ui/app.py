@@ -1,3 +1,5 @@
+import time
+from functools import partial
 from pathlib import Path
 from typing import Optional
 from textual.app import App, ComposeResult
@@ -6,9 +8,13 @@ from textual.widgets import Footer, TabbedContent, TabPane, Input
 from textual.binding import Binding
 from textual import events
 
-from collectors.base import BaseCollector, DemoCollector
-from collectors.log_collector import LogCollector
+from collectors.base import BaseCollector
+from collectors.telemetry import summarize_alerts
+from logging_setup import get_logger
+from pulseops_config import AlertConfig
 from collectors.audit_exporter import export_audit_report, calculate_audit_score
+
+log = get_logger("ui")
 
 from ui.widgets.header_bar import HeaderBar
 from ui.widgets.vitals_panel import VitalsPanel
@@ -30,15 +36,7 @@ from ui.modals.port_finder_modal import PortFinderModal
 from ui.modals.alerts_modal import AlertsModal
 from ui.modals.config_viewer_modal import ConfigViewerModal
 
-from models.system import SystemSnapshot
-from models.ports import ListeningPort, PortExposure
-from models.proxy import ProxyRoute
-from models.backup import BackupTask, BackupData
-from models.docker import ContainerSummary
-from models.services import ServiceUnit, ServiceState
-from models.database import DatabaseInstance
-from models.security import SecurityOverview
-from models.storage import StorageOverview
+from models.telemetry import Telemetry
 
 THEMES = [
     ("github", "GitHub Dark"),
@@ -102,26 +100,31 @@ class ServerTUIApp(App):
         Binding("s", "tab_0", "Storage (s)", show=False),
     ]
 
-    def __init__(self, collector: BaseCollector, poll_interval: float = 1.5, ascii_mode: bool = False, **kwargs):
+    def __init__(
+        self,
+        collector: BaseCollector,
+        poll_interval: float = 2.0,
+        slow_interval: float = 30.0,
+        ascii_mode: bool = False,
+        alert_thresholds: Optional[AlertConfig] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
+        self.alert_thresholds = alert_thresholds
         self.collector = collector
+        self.poll_interval = poll_interval
+        self.slow_interval = max(slow_interval, poll_interval)
         self._ascii_filter = AsciiFilter() if ascii_mode else None
         self._privilege_warning_shown = False
-        self.poll_interval = poll_interval
-        self.log_collector = LogCollector()
         self._current_theme_idx = 0
-        
-        # Latest telemetry cache for modals and export
-        self._last_snapshot: Optional[SystemSnapshot] = None
-        self._last_ports: list[ListeningPort] = []
-        self._last_routes: list[ProxyRoute] = []
-        self._last_backups: list[BackupTask] = []
-        self._last_containers: list[ContainerSummary] = []
-        self._last_backup_data: BackupData = BackupData()
-        self._last_services: list[ServiceUnit] = []
-        self._last_databases: list[DatabaseInstance] = []
-        self._last_security: SecurityOverview = SecurityOverview()
-        self._last_storage: StorageOverview = StorageOverview()
+
+        # Polling state: one collection at a time, in a worker thread
+        self._poll_in_flight = False
+        self._last_slow_poll: Optional[float] = None
+        self._failures = 0
+
+        # Latest telemetry, used by modals and export
+        self.telemetry: Optional[Telemetry] = None
 
         # Widgets
         self.header_bar = HeaderBar()
@@ -189,8 +192,8 @@ class ServerTUIApp(App):
     def on_mount(self) -> None:
         self.search_input.can_focus = False
         self.set_focus(None)
-        self.poll_data()
-        self.set_interval(self.poll_interval, self.poll_data)
+        self.request_poll(force_slow=True)
+        self.set_interval(self.poll_interval, self.request_poll)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "search-input":
@@ -255,7 +258,7 @@ class ServerTUIApp(App):
             self.search_input.focus()
 
     def action_find_port(self) -> None:
-        self.push_screen(PortFinderModal(ports=self._last_ports))
+        self.push_screen(PortFinderModal(ports=self.telemetry.ports if self.telemetry else []))
 
     def action_toggle_port_filter(self) -> None:
         if hasattr(self, "all_ports_table"):
@@ -307,13 +310,9 @@ class ServerTUIApp(App):
             pass
 
     def action_show_alerts(self) -> None:
-        if self._last_snapshot:
-            self.push_screen(AlertsModal(
-                snapshot=self._last_snapshot,
-                ports=self._last_ports,
-                routes=self._last_routes,
-                storage=self._last_storage,
-            ))
+        t = self.telemetry
+        if t:
+            self.push_screen(AlertsModal(snapshot=t.snapshot, ports=t.ports, routes=t.routes, storage=t.storage))
 
     def action_toggle_theme(self) -> None:
         self._current_theme_idx = (self._current_theme_idx + 1) % len(THEMES)
@@ -330,203 +329,154 @@ class ServerTUIApp(App):
         self.notify(f"Renk teması: {theme_name}", title="🎨 Tema Değiştirildi", timeout=2.0)
 
     def action_refresh_data(self) -> None:
-        self.poll_data()
+        if self._poll_in_flight:
+            self.notify("Veriler zaten toplanıyor...", timeout=1.5)
+            return
+        self.request_poll(force_slow=True)
+        self.notify("Tüm veriler yeniden toplanıyor...", title="Yenile", timeout=1.5)
 
     def action_export_report(self) -> None:
         """Exports full server audit markdown report to disk."""
-        if not self._last_snapshot:
+        t = self.telemetry
+        if not t:
             self.notify("⚠️ Veriler henüz yüklenmedi, lütfen bekleyin.", title="Rapor Hatası", severity="warning")
             return
-            
         try:
             report_file = export_audit_report(
-                self._last_snapshot,
-                self._last_ports,
-                self._last_routes,
-                self._last_backups,
-                self._last_containers,
-                databases=self._last_databases,
-                services=self._last_services,
-                security=self._last_security,
-                storage=self._last_storage,
-                output_dir="audit-reports"
-            )
-            self.notify(
-                f"PulseOps denetim raporu kaydedildi:\n{report_file}",
-                title="⚡ PulseOps Raporu Oluşturuldu!",
-                severity="information",
-                timeout=5.0
+                t.snapshot, t.ports, t.routes, t.backups, t.containers,
+                databases=t.databases, services=t.services, security=t.security, storage=t.storage,
+                output_dir="audit-reports",
             )
         except Exception as e:
+            log.exception("Rapor yazılamadı")
             self.notify(f"Rapor yazılırken hata oluştu: {e}", title="Hata", severity="error")
+            return
+        self.notify(
+            f"PulseOps denetim raporu kaydedildi:\n{report_file}",
+            title="⚡ PulseOps Raporu Oluşturuldu!",
+            severity="information",
+            timeout=5.0,
+        )
 
-    def _calculate_alerts_count(self) -> int:
-        count, _ = self._get_alerts_summary()
-        return count
+    # --- polling ------------------------------------------------------------------------------
 
-    def _get_alerts_summary(self) -> tuple[int, list[str]]:
-        count = 0
-        snippets: list[str] = []
-        if not self._last_snapshot:
-            return 0, []
-        # 1. Risky exposed ports
-        for p in self._last_ports:
-            if p.exposure == PortExposure.EXPOSED_RISK:
-                count += 1
-                snippets.append(f"Port :{p.port} ({p.process_name or 'servis'}) dışa açık!")
-        # 2. SSL expiring <= 7 days
-        for r in self._last_routes:
-            if r.is_ssl and r.ssl_days_left is not None and r.ssl_days_left <= 7:
-                count += 1
-                snippets.append(f"{r.domain} SSL {r.ssl_days_left} gün kaldı!")
-        # 3. Bad gateways
-        for r in self._last_routes:
-            if r.http_status in (502, 504):
-                count += 1
-                snippets.append(f"{r.domain} {r.http_status} Hatası!")
-        # 4. Disks > 80%
-        for d in self._last_snapshot.disks:
-            if d.percent > 80.0:
-                count += 1
-                snippets.append(f"{d.mountpoint} disk %{d.percent:.0f}")
-        # 5. RAM > 85%
-        if self._last_snapshot.memory.percent > 85.0:
-            count += 1
-            snippets.append(f"RAM %{self._last_snapshot.memory.percent:.0f}")
-        # 6. Firewall disabled
-        if not self._last_snapshot.firewall.is_active:
-            count += 1
-            snippets.append("Güvenlik Duvarı KAPALI")
-        # 7. Stopped critical services
-        for s in self._last_services:
-            if any(cn in s.name.lower() for cn in ["nginx", "docker", "postgres", "mysql", "redis"]):
-                if s.state == ServiceState.STOPPED or s.state == ServiceState.FAILED:
-                    count += 1
-                    snippets.append(f"{s.name} servisi çalışmıyor")
-        # 8. Backup retention risk
-        if hasattr(self, "_last_backup_data") and self._last_backup_data and self._last_backup_data.retention.risk_level in ("HIGH", "CRITICAL"):
-            count += 1
-            snippets.append("Yedekleme saklama riski")
-        # 9. Storage cache bloated (>10GB)
-        if hasattr(self, "_last_storage") and self._last_storage and self._last_storage.is_cache_bloated:
-            count += 1
-            snippets.append("BuildKit önbelleği >10GB")
-        return count, snippets
+    def _logs_visible(self) -> bool:
+        try:
+            return self.query_one("#main-tabs", TabbedContent).active == "tab-logs"
+        except Exception:
+            return False
+
+    def request_poll(self, force_slow: bool = False) -> None:
+        """Starts one background collection unless one is still running (slow hosts never pile up)."""
+        if self._poll_in_flight:
+            return
+        now = time.monotonic()
+        include_slow = force_slow or self._last_slow_poll is None or now - self._last_slow_poll >= self.slow_interval
+        include_logs = include_slow or self._logs_visible()
+        self._poll_in_flight = True
+        self.run_worker(
+            partial(self._collect_in_thread, include_slow, include_logs),
+            thread=True,
+            group="poll",
+            exit_on_error=False,
+        )
+
+    def _collect_in_thread(self, include_slow: bool, include_logs: bool) -> None:
+        try:
+            telemetry = self.collector.collect(include_slow=include_slow, include_logs=include_logs)
+        except Exception as e:
+            log.exception("Telemetri toplanamadı")
+            self.call_from_thread(self._on_poll_failed, e)
+        else:
+            self.call_from_thread(self._on_poll_done, telemetry, include_slow)
+
+    def _on_poll_done(self, telemetry: Telemetry, include_slow: bool) -> None:
+        self._poll_in_flight = False
+        if include_slow:
+            self._last_slow_poll = time.monotonic()
+        if self._failures:
+            log.info("Bağlantı yeniden kuruldu (%d başarısız denemeden sonra)", self._failures)
+            self.notify("Veri akışı yeniden sağlandı.", title="Bağlantı", severity="information", timeout=4.0)
+            self._failures = 0
+            self.header_bar.error_message = ""
+        try:
+            self.apply_telemetry(telemetry)
+        except Exception:
+            log.exception("Telemetri arayüze uygulanamadı")
+
+    def _on_poll_failed(self, error: Exception) -> None:
+        self._poll_in_flight = False
+        self._failures += 1
+        message = str(error) or type(error).__name__
+        self.header_bar.error_message = message
+        if self._failures == 1:
+            self.notify(
+                f"{message}\n\nSon alınan veriler gösteriliyor; her {self.poll_interval:g} sn'de yeniden deneniyor.",
+                title="Veri toplanamadı",
+                severity="error",
+                timeout=8.0,
+            )
 
     def poll_data(self) -> None:
-        try:
-            snapshot, ports, routes, backups, containers = self.collector.poll()
-            
-            # Cache for modals and export
-            self._last_snapshot = snapshot
-            self._last_ports = ports
-            self._last_routes = routes
-            self._last_backups = backups
-            self._last_containers = containers
+        """Synchronous full poll + apply (used by tests and scripts)."""
+        self.apply_telemetry(self.collector.collect(include_slow=True, include_logs=True))
 
-            # Update Header
-            privileges = self.collector.poll_privileges()
-            self.header_bar.user_label = privileges.user
-            self.header_bar.access_limited = bool(privileges.limitations)
-            if privileges.limitations and not self._privilege_warning_shown:
-                self._privilege_warning_shown = True
-                self.notify(
-                    "\n".join(f"• {item}" for item in privileges.limitations) + f"\n\n{privileges.hint}",
-                    title=f"Kısıtlı erişim: {privileges.user}",
-                    severity="warning",
-                    timeout=12.0,
-                )
-            self.header_bar.hostname = snapshot.hostname
-            self.header_bar.os_name = snapshot.os_name
-            self.header_bar.kernel = snapshot.kernel
-            self.header_bar.uptime_str = snapshot.uptime_human
+    def apply_telemetry(self, t: Telemetry) -> None:
+        self.telemetry = t
+        snapshot = t.snapshot
 
-            # Update Vitals
-            self.vitals_panel.snapshot = snapshot
-
-            # Update Port & Proxy tab
-            self.port_table.routes = routes
-            self.port_table.ports = ports
-
-            # Update All Ports tab
-            self.all_ports_table.ports = ports
-
-            # Update Top Processes tab
-            self.top_processes_panel.processes = snapshot.top_processes
-
-            # Update Backups & Containers
-            if hasattr(self.collector, "poll_backup_data"):
-                backup_data = self.collector.poll_backup_data()
-            else:
-                backup_data = BackupData(tasks=backups)
-            self._last_backup_data = backup_data
-            self.backup_panel.tasks = backup_data.tasks or backups
-            self.backup_detail_view.backup_data = backup_data
-            self.service_panel.containers = containers
-
-            # Poll Services
-            if hasattr(self.collector, "poll_services"):
-                services = self.collector.poll_services()
-            else:
-                services = []
-            self._last_services = services
-            self.services_table.services = services
-
-            # Poll Databases
-            if hasattr(self.collector, "poll_databases"):
-                databases = self.collector.poll_databases(ports, containers)
-            else:
-                databases = []
-            self._last_databases = databases
-            self.database_panel.databases = databases
-
-            # Poll Security Overview
-            if hasattr(self.collector, "poll_security"):
-                security = self.collector.poll_security(ports)
-            else:
-                security = SecurityOverview()
-            self._last_security = security
-            self.security_panel.security = security
-
-            # Poll Storage Overview
-            if hasattr(self.collector, "poll_storage"):
-                storage = self.collector.poll_storage()
-            else:
-                storage = StorageOverview()
-            self._last_storage = storage
-            self.storage_panel.storage = storage
-
-            # Update Alerts count in header and status bar
-            alerts_cnt, snippets = self._get_alerts_summary()
-            self.header_bar.alerts_count = alerts_cnt
-            self.alert_ticker.alerts_count = alerts_cnt
-            self.alert_ticker.alert_snippet = "  •  ".join(snippets[:3])
-
-            # Calculate Health Score & Grade
-            score, grade = calculate_audit_score(
-                snapshot,
-                ports,
-                routes,
-                security=security,
-                storage=storage,
+        privileges = t.privileges
+        self.header_bar.user_label = privileges.user
+        self.header_bar.access_limited = bool(privileges.limitations)
+        if privileges.limitations and not self._privilege_warning_shown:
+            self._privilege_warning_shown = True
+            self.notify(
+                "\n".join(f"• {item}" for item in privileges.limitations) + f"\n\n{privileges.hint}",
+                title=f"Kısıtlı erişim: {privileges.user}",
+                severity="warning",
+                timeout=12.0,
             )
-            self.vitals_panel.health_score = score
-            self.vitals_panel.health_grade = grade
 
-            ssl_warn = sum(1 for r in routes if r.is_ssl and r.ssl_days_left is not None and r.ssl_days_left <= 7)
-            self.dashboard_status_bar.docker_count = len(containers)
-            self.dashboard_status_bar.websites_count = len(routes)
-            self.dashboard_status_bar.db_count = len(databases)
-            self.dashboard_status_bar.ssl_warnings = ssl_warn
-            self.dashboard_status_bar.alerts_count = alerts_cnt
+        self.header_bar.hostname = snapshot.hostname
+        self.header_bar.os_name = snapshot.os_name
+        self.header_bar.kernel = snapshot.kernel
+        self.header_bar.uptime_str = snapshot.uptime_human
 
-            # Update Log stream
-            if isinstance(self.collector, DemoCollector):
-                self.log_viewer.logs = self.log_collector.poll_mock()
-            elif hasattr(self.collector, "poll_logs"):
-                self.log_viewer.logs = self.collector.poll_logs()
-            else:
-                self.log_viewer.logs = self.log_collector.poll_live()
-                
+        self.vitals_panel.snapshot = snapshot
+        self.port_table.routes = t.routes
+        self.port_table.ports = t.ports
+        self.all_ports_table.ports = t.ports
+        self.top_processes_panel.processes = snapshot.top_processes
+
+        self.backup_panel.tasks = t.backups
+        self.backup_detail_view.backup_data = t.backup_data
+        self.service_panel.containers = t.containers
+        self.services_table.services = t.services
+        self.database_panel.databases = t.databases
+        self.security_panel.security = t.security
+        self.storage_panel.storage = t.storage
+        if t.logs:
+            self.log_viewer.logs = t.logs
+
+        alerts = summarize_alerts(t, self.alert_thresholds)
+        self.header_bar.alerts_count = len(alerts)
+        self.alert_ticker.alerts_count = len(alerts)
+        self.alert_ticker.alert_snippet = "  •  ".join(alerts[:3])
+
+        score, grade = calculate_audit_score(snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
+        self.vitals_panel.health_score = score
+        self.vitals_panel.health_grade = grade
+
+        self.dashboard_status_bar.docker_count = len(t.containers)
+        self.dashboard_status_bar.websites_count = len(t.routes)
+        self.dashboard_status_bar.db_count = len(t.databases)
+        self.dashboard_status_bar.ssl_warnings = sum(
+            1 for r in t.routes if r.is_ssl and r.ssl_days_left is not None and r.ssl_days_left <= 7
+        )
+        self.dashboard_status_bar.alerts_count = len(alerts)
+
+    def on_unmount(self) -> None:
+        try:
+            self.collector.close()
         except Exception:
-            pass
+            log.exception("Collector kapatılamadı")

@@ -78,6 +78,9 @@ class FirewallStatus(BaseModel):
     is_active: bool = True
     backend: str = "UFW"
     summary: str = "Aktif (22, 80, 443 izinli)"
+    # False when a firewall tool exists but its state could not be read (usually: not root)
+    known: bool = True
+    rules_count: int = 0
 
     @property
     def badge(self) -> str:

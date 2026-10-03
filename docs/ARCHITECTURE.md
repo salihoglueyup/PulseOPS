@@ -24,18 +24,20 @@ graph TD
     
     subgraph Data Collection Layer
         Collector[Collector Factory] -->|--demo| DemoCol[DemoCollector]
-        Collector -->|--live (Local)| LocalCol[LocalLiveCollector]
-        Collector -->|--host (SSH Remote)| SSHCol[SSHCollector]
+        Collector -->|pulseops - yerel Linux| ProbeCol[ProbeCollector + LocalTransport]
+        Collector -->|pulseops user@host| SSHCol[SSHCollector = ProbeCollector + SSHTransport]
+        ProbeCol --> Probe[Tek shell probe: FAST / SLOW / LOGS katmanları]
+        SSHCol --> Probe
     end
 
     subgraph Parsing & Diagnostic Probes
-        SSHCol --> NginxProbe[Nginx & Upstream Parser]
-        SSHCol --> PortProbe[SS/Netstat & Port Security]
-        SSHCol --> DBProbe[Database Discovery Probe]
-        SSHCol --> ServiceProbe[Systemd Service Probe]
-        SSHCol --> SecProbe[SSH & Firewall Hardening Audit]
-        SSHCol --> StorageProbe[BuildKit & Containerd Analyzer]
-        SSHCol --> BackupProbe[Timers & Crontab Inspector]
+        Probe --> NginxProbe[Nginx & Upstream Parser]
+        Probe --> PortProbe[ss / netstat / proc-net & Port Security]
+        Probe --> DBProbe[Database Discovery]
+        Probe --> ServiceProbe[Systemd Service Probe]
+        Probe --> SecProbe[sshd -T & Firewall INPUT Audit]
+        Probe --> StorageProbe[BuildKit & Containerd Analyzer]
+        Probe --> BackupProbe[Timers, Crontab & Snapshot Inspector]
     end
 
     subgraph Domain Models (Pydantic v2)
@@ -69,23 +71,41 @@ graph TD
 ## 3. Katmanlı Mimari Detayları
 
 ### A. Veri Toplama Katmanı (Collector Layer)
-* `collectors/base.py`:
-  * `ServerCollector` soyut arayüzü `poll()` metodunu zorunlu kılar.
-  * Polling sonucunda tam ve tipli telemetri paketleri döndürülür: `(snapshot, ports, routes, backups, containers, databases, services, security, storage)`.
-* `collectors/ssh_collector.py` (`SSHCollector`):
-  * `paramiko.SSHClient` kullanarak parola veya RSA/Ed25519 özel anahtarıyla bağlanır.
-  * Tek bir toplu probe betiği (`BATCH_PROBE_SCRIPT`) çalıştırır; `ss`, `ps`, `df`, `docker`, `systemctl`, `sshd_config` vb. çıktıları `===SECTION:...===` işaretleriyle ayrıştırır.
-* `collectors/base.py` (`LocalLiveCollector`):
-  * Yerel işletim sistemini algılar (`platform.system()`).
-  * Yerel Linux sistemde `psutil`, `/proc` ve `ss` gibi komutlarla telemetri üretir.
-* `collectors/base.py` (`DemoCollector`, `collectors/mock_collector.py` üzerine kurulu):
-  * Geliştirme, test ve sunum amaçlı gerçekçi mock veri simülatörüdür.
 
-* `collectors/telemetry.py`: `collect_telemetry(collector)` tek bir polling turunu `models/telemetry.py::Telemetry` nesnesi olarak döndürür; `summarize_alerts()` aktif riskleri listeler. `status`/`report`/`check` komutları bunu kullanır.
-* `collectors/privilege_collector.py`: Yerel süreç veya SSH probe'unun `PRIV` bölümünden yetki durumunu (`PrivilegeInfo`) çıkarır.
+Yerel ve uzak mod **aynı kodu** çalıştırır: tek bir POSIX shell betiği (probe) hedef makinede `sh -s` ile
+çalışır, çıktısı bölümlere ayrılır ve aynı ayrıştırıcılardan geçer. Böylece iki mod aynı sonucu verir ve
+her özellik bir kez yazılır.
+
+* `collectors/probe.py`: Probe betiği ve bölüm ayrıştırıcı.
+  * **FAST** (varsayılan 2 sn): `/proc` dosyaları shell builtin'leriyle (fork'suz) okunur — CPU, RAM, disk
+    I/O, ağ — artı `ss -lntu` ve tüm süreçler için tek bir `awk` geçişi. sudo **asla** kullanılmaz.
+  * **SLOW** (varsayılan 30 sn): host kimliği, diskler (`df`), port sahipleri (`ss -p`), nginx, timer/cron,
+    yedek dosyaları, docker, depolama, güvenlik duvarı, servisler, `sshd -T`, yetki durumu.
+    Neredeyse hiç değişmeyen bölümler (`systemctl list-unit-files`, `getconf`) 10 dakikada bir yenilenir.
+  * **LOGS**: Yalnızca Loglar sekmesi açıkken veya yavaş turda.
+  * Her çalıştırmada rastgele bir nonce bölüm işaretlerine eklenir; komut çıktısı (ör. bir log satırı) sahte
+    bölüm enjekte edemez. `LC_ALL=C` ile çıktılar dilden bağımsızdır.
+* `collectors/probe_parsers.py`: Saf (I/O'suz) ayrıştırıcılar: `/proc/stat`, `/proc/meminfo`, `df -P -T`,
+  `/proc/diskstats`, `/proc/net/*`, `/proc/*/stat`, güvenlik duvarı (UFW, firewalld, iptables INPUT,
+  nftables input hook), yedek dosyaları.
+* `collectors/probe_collector.py` (`ProbeCollector`): Durumlu toplayıcı. Oranları (CPU, süreç CPU, ağ,
+  disk I/O) iki örnek arasındaki farktan hesaplar; süre olarak hedefin `/proc/uptime` farkını kullanır,
+  böylece SSH gecikmesi oranları bozmaz. İlk turda kısa bir baseline örneği alır, tek seferlik
+  `pulseops status` da gerçek CPU değerini gösterir. Yavaş katmanı önbellekte tutar.
+* `collectors/transport.py`: `LocalTransport` (alt süreç) ve `SSHTransport` (paramiko; keepalive, tek
+  seferlik otomatik yeniden bağlanma). İkisi de betiği stdin'den `sh -s`'e verir; uzaktaki login shell
+  fish/zsh olsa da çalışır.
+* `collectors/ssh_collector.py` (`SSHCollector`): `ProbeCollector` + `SSHTransport`.
+* `collectors/base.py`: `BaseCollector.collect(include_slow, include_logs) -> Telemetry` tek giriş noktasıdır.
+  `create_local_collector()` Linux'ta `ProbeCollector(LocalTransport())`, diğer platformlarda psutil tabanlı
+  `LocalLiveCollector` döndürür. `DemoCollector` `collectors/mock_collector.py` üzerine kuruludur.
+* `collectors/telemetry.py`: `collect_telemetry()` ve `summarize_alerts()` (eşikler yapılandırılabilir).
+* `collectors/privilege_collector.py`: `PRIV` bölümünden yetki durumunu (`PrivilegeInfo`) çıkarır.
 
 ### A2. Komut Satırı Katmanı
-* `cli.py`: TUI argümanları (`--interval`, `--no-color`, `--ascii`, `--no-mouse`) ve alt komut yönlendirmesi.
+* `cli.py`: TUI argümanları (`--interval`, `--slow-interval`, `--no-color`, `--ascii`, `--no-mouse`), yapılandırma yükleme ve alt komut yönlendirmesi.
+* `pulseops_config.py`: `/etc/pulseops/config.toml` ve `~/.config/pulseops/config.toml` (Pydantic ile doğrulanır; bilinmeyen anahtar hatadır).
+* `logging_setup.py`: `~/.cache/pulseops/pulseops.log` (döndürmeli, 1 MB x 3). TUI terminali kullandığı için tanılama dosyaya yazılır.
 * `commands.py`: Ortak bağlantı argümanları, collector seçimi, `status` / `report` / `check`.
 * `installer.py`: `version` / `update` / `uninstall`; kurulum türünü (binary, venv, pipx, kaynak) algılar.
 * `ui/ascii_filter.py`: `--ascii` modunda terminale giden her karakteri aynı hücre genişliğinde ASCII karşılığına çeviren Textual çıktı filtresi.
@@ -103,7 +123,8 @@ Bütün telemetri verileri güçlü tip garantisi (`BaseModel`) ve doğrulama ku
 * `models/docker.py`: `ContainerSummary`.
 
 ### C. Arayüz ve Sunum Katmanı (Textual Reactive Engine)
-* `ui/app.py`: Ana Textual uygulaması. 1-saniye veya yapılandırılabilir aralıklarla arka planda çalışır (`set_interval`). Not: polling şu an UI thread'inde senkron çalışır; thread worker'a taşınması [ROADMAP](plans/ROADMAP.md) Faz 2'dedir.
+* `ui/app.py`: Ana Textual uygulaması. Her `interval`'de `collector.collect()` bir **thread worker**'da çalışır, sonuç `apply_telemetry()` ile UI thread'inde uygulanır; arayüz hiçbir zaman beklemez. Önceki tur bitmeden yenisi başlamaz (yavaş sunucularda istekler birikmez). Hata durumunda son veriler ekranda kalır, header'da kırmızı bağlantı uyarısı çıkar ve hata log dosyasına yazılır.
+* `ui/safe.py`: Telemetri güvenilmeyen veridir (süreç adları, log satırları, domainler). `PlainTable` düz metin hücreleri markup olarak yorumlamaz; log görüntüleyici düz metni regex ile renklendirir.
 * **10 Sekmeli Sekme Mimarisi (`TabbedContent`):**
   1. `1 - Dashboard`: Donanım göstergeleri, CPU/RAM/Swap çubukları ve sistem sağlık skoru.
   2. `2 - Süreçler`: CPU/RAM'e göre sıralı süreçler.
@@ -149,4 +170,6 @@ PulseOps, modern kurumsal operasyon araçlarının (Datadog & JetBrains Dark) ta
 
 1. **Parola ve Gizli Bilgi Sızdırmazlığı:** CLI argümanlarında verilen SSH parolaları veya anahtarları loglanmaz veya ekranda gösterilmez.
 2. **Kabuk Enjeksiyonu Koruması:** SSH üzerinde yürütülen komutlar parametrik ve statik olarak tanımlanmıştır; kullanıcı girdisi doğrudan shell komutuna gömülmez.
-3. **Sudo İhtiyacının İzolasyonu:** Temel telemetri (`ss`, `ps`, `df`, `docker ps`) için standart kullanıcı yetkileri yeterlidir; UFW veya kısıtlı loglar gibi alanlarda yetki yoksa uygulama çökmek yerine `[Yetki Yok / Bilinmiyor]` etiketleriyle graceful fallback uygular.
+3. **Sudo İhtiyacının İzolasyonu:** Temel telemetri standart kullanıcı yetkisiyle çalışır. sudo root olarak hiç, hızlı katmanda hiçbir zaman kullanılmaz; root olmayan kullanıcıda yalnızca parolasız sudo'nun çalıştığı bir kez tespit edildikten sonra yavaş katmanda `sudo -n` ile denenir (her sudo çağrısı auth log'a yazıldığı için). `[general] use_sudo = false` ile tamamen kapatılabilir. Okunamayan veriler (ör. güvenlik duvarı) "aktif" veya "kapalı" sayılmaz, **bilinmiyor** olarak gösterilir ve skordan puan düşürmez.
+4. **Markup / Terminal Enjeksiyonu Koruması:** Sunucudan gelen hiçbir metin Rich markup olarak yorumlanmaz; `[/]` içeren bir istek yolu arayüzü çökertemez, `[link=...]` tıklanabilir link üretemez (`tests/test_markup_injection.py`).
+5. **Probe Bütünlüğü:** Bölüm işaretleri çalıştırma başına rastgele nonce içerir; çıktıdaki sahte işaretler veri olarak kalır.

@@ -4,6 +4,7 @@ from collectors.base import DemoCollector
 from collectors.privilege_collector import parse_privileges_section, collect_local_privileges
 from models.privileges import PrivilegeInfo
 from ui.app import ServerTUIApp
+from conftest import settle
 
 
 def test_parse_root():
@@ -57,14 +58,14 @@ class RestrictedDemoCollector(DemoCollector):
 async def test_header_and_notification_for_restricted_user():
     app = ServerTUIApp(collector=RestrictedDemoCollector(), poll_interval=60)
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await settle(pilot)
         rendered = app.header_bar.render().plain
         assert "deploy (kısıtlı)" in rendered
         titles = [n.title for n in app._notifications]
         assert titles.count("Kısıtlı erişim: deploy") == 1
         # A second poll must not repeat the warning
-        app.poll_data()
-        await pilot.pause()
+        app.request_poll(force_slow=True)
+        await settle(pilot)
         assert [n.title for n in app._notifications].count("Kısıtlı erişim: deploy") == 1
 
 
@@ -72,7 +73,7 @@ async def test_header_and_notification_for_restricted_user():
 async def test_no_privilege_warning_for_full_access():
     app = ServerTUIApp(collector=DemoCollector(), poll_interval=60)
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await settle(pilot)
         assert "kısıtlı" not in app.header_bar.render().plain
         assert not any((n.title or "").startswith("Kısıtlı") for n in app._notifications)
 

@@ -4,15 +4,17 @@ import json
 import getpass
 import argparse
 from pathlib import Path
+from typing import Optional
 
 from rich.console import Console
 from rich.table import Table
 
-from collectors.base import BaseCollector, LocalLiveCollector, DemoCollector
+from collectors.base import BaseCollector, DemoCollector, create_local_collector
 from collectors.telemetry import collect_telemetry, summarize_alerts
 from collectors.audit_exporter import calculate_audit_score, generate_audit_markdown
 from models.telemetry import Telemetry
 from models.services import ServiceState
+from pulseops_config import Config, ConfigError, init_user_config, render_config, user_config_path, SYSTEM_CONFIG
 
 # Nagios / monitoring plugin compatible exit codes
 EXIT_OK, EXIT_WARNING, EXIT_CRITICAL, EXIT_UNKNOWN = 0, 1, 2, 3
@@ -47,8 +49,9 @@ def build_collector(args: argparse.Namespace, interactive: bool = True) -> BaseC
     elif ssh_target in ("live", "local"):
         args.live, ssh_target = True, None
 
+    use_sudo = _config(args).general.use_sudo
     if not ssh_target:
-        return DemoCollector() if args.demo else LocalLiveCollector()
+        return DemoCollector() if args.demo else create_local_collector(use_sudo=use_sudo)
 
     from collectors.ssh_collector import SSHCollector
 
@@ -72,7 +75,8 @@ def build_collector(args: argparse.Namespace, interactive: bool = True) -> BaseC
 
     if interactive:
         print(f"🔗 Uzak Linux sunucusuna bağlanılıyor: {username}@{host}:{args.port}...", file=sys.stderr)
-    collector = SSHCollector(host=host, username=username, port=args.port, key_filename=args.key, password=password)
+    collector = SSHCollector(host=host, username=username, port=args.port, key_filename=args.key, password=password,
+                             use_sudo=use_sudo)
     try:
         collector.test_connection()
     except Exception as e:
@@ -90,12 +94,16 @@ def _score(t: Telemetry) -> tuple[int, str]:
     return calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
 
 
-def _telemetry_json(t: Telemetry) -> dict:
+def _config(args: argparse.Namespace) -> Config:
+    return getattr(args, "config", None) or Config()
+
+
+def _telemetry_json(t: Telemetry, config: Config) -> dict:
     score, grade = _score(t)
     data = t.model_dump(mode="json")
     data["score"] = score
     data["grade"] = grade
-    data["alerts"] = summarize_alerts(t)
+    data["alerts"] = summarize_alerts(t, config.alerts)
     return data
 
 
@@ -107,10 +115,10 @@ def _collect_or_exit(collector: BaseCollector) -> Telemetry:
         sys.exit(EXIT_UNKNOWN)
 
 
-def render_status(t: Telemetry, console: Console) -> None:
+def render_status(t: Telemetry, console: Console, config: Optional[Config] = None) -> None:
     s = t.snapshot
     score, grade = _score(t)
-    alerts = summarize_alerts(t)
+    alerts = summarize_alerts(t, (config or Config()).alerts)
 
     console.print(f"[bold]⚡ PulseOps[/bold]  {s.hostname}  ·  {s.os_name}  ·  çekirdek {s.kernel}  ·  uptime {s.uptime_human}")
     console.print(f"[bold]Sağlık skoru:[/bold] {score}/100  {grade}")
@@ -156,16 +164,16 @@ def render_status(t: Telemetry, console: Console) -> None:
 def cmd_status(args: argparse.Namespace) -> int:
     t = _collect_or_exit(build_collector(args))
     if args.json:
-        print(json.dumps(_telemetry_json(t), ensure_ascii=False, indent=2))
+        print(json.dumps(_telemetry_json(t, _config(args)), ensure_ascii=False, indent=2))
     else:
-        render_status(t, Console())
+        render_status(t, Console(), _config(args))
     return EXIT_OK
 
 
 def cmd_report(args: argparse.Namespace) -> int:
     t = _collect_or_exit(build_collector(args))
     if args.format == "json":
-        content = json.dumps(_telemetry_json(t), ensure_ascii=False, indent=2)
+        content = json.dumps(_telemetry_json(t, _config(args)), ensure_ascii=False, indent=2)
     else:
         content = generate_audit_markdown(
             t.snapshot, t.ports, t.routes, t.backups, t.containers,
@@ -196,12 +204,15 @@ def evaluate_check(score: int, warn: int, crit: int) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
+    config = _config(args)
+    args.warn = config.check.warn if args.warn is None else args.warn
+    args.crit = config.check.crit if args.crit is None else args.crit
     if args.crit > args.warn:
         print("❌ --crit değeri --warn değerinden büyük olamaz.", file=sys.stderr)
         return EXIT_UNKNOWN
     t = _collect_or_exit(build_collector(args, interactive=False))
     score, grade = _score(t)
-    alerts = summarize_alerts(t)
+    alerts = summarize_alerts(t, config.alerts)
     code = evaluate_check(score, args.warn, args.crit)
     label = {EXIT_OK: "OK", EXIT_WARNING: "WARNING", EXIT_CRITICAL: "CRITICAL"}[code]
     summary = f"; {'; '.join(alerts)}" if alerts else ""
@@ -230,13 +241,35 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
         help="Sağlık skoruna göre çıkış kodu döner (0 OK, 1 WARNING, 2 CRITICAL, 3 UNKNOWN)",
     )
     add_connection_args(p_check)
-    p_check.add_argument("--warn", type=int, default=80, help="Bu skorun altı WARNING (varsayılan: 80)")
-    p_check.add_argument("--crit", type=int, default=50, help="Bu skorun altı CRITICAL (varsayılan: 50)")
+    p_check.add_argument("--warn", type=int, default=None, help="Bu skorun altı WARNING (varsayılan: config, yoksa 80)")
+    p_check.add_argument("--crit", type=int, default=None, help="Bu skorun altı CRITICAL (varsayılan: config, yoksa 50)")
     p_check.set_defaults(func=cmd_check)
+
+    p_config = sub.add_parser("config", help="Geçerli yapılandırmayı gösterir veya şablon oluşturur")
+    p_config.add_argument("--init", action="store_true", help=f"Açıklamalı şablonu {user_config_path()} konumuna yazar")
+    p_config.add_argument("--force", action="store_true", help="--init ile var olan dosyanın üzerine yazar")
+    p_config.set_defaults(func=cmd_config)
 
     from installer import add_installer_subcommands
     add_installer_subcommands(sub)
     return parser
 
 
-SUBCOMMANDS = ("status", "report", "check", "update", "uninstall", "version")
+SUBCOMMANDS = ("status", "report", "check", "config", "update", "uninstall", "version")
+
+
+def cmd_config(args: argparse.Namespace) -> int:
+    if args.init:
+        try:
+            path = init_user_config(force=args.force)
+        except ConfigError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            return 1
+        print(f"✓ Şablon oluşturuldu: {path}")
+        return 0
+    loaded = getattr(args, "config_files", [])
+    print("# Okunan dosyalar: " + (", ".join(str(p) for p in loaded) if loaded else "yok (varsayılanlar)"))
+    print(f"# Aranan konumlar: {SYSTEM_CONFIG}, {user_config_path()}")
+    print()
+    print(render_config(_config(args)), end="")
+    return 0

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from collectors.base import DemoCollector
+from conftest import settle
 from ui.app import ServerTUIApp
 from ui.modals.alerts_modal import AlertsModal
 
@@ -77,8 +78,7 @@ TABS = ["tab-dashboard", "tab-processes", "tab-ports", "tab-services", "tab-data
 async def test_hostile_telemetry_renders_safely(payload):
     app = ServerTUIApp(collector=HostileCollector(payload), poll_interval=60)
     async with app.run_test(size=(160, 50)) as pilot:
-        await pilot.pause()
-        app.log_viewer.logs = app.collector.poll_logs()
+        await settle(pilot)
         for tab in TABS:
             app.query_one("#main-tabs").active = tab
             await pilot.pause()
@@ -92,8 +92,8 @@ async def test_hostile_telemetry_renders_safely(payload):
         log_plain = "".join(seg.text for seg in Console(width=300, file=open("/dev/null", "w")).render(app.log_viewer.render()))
         assert payload in log_plain
 
-        await app.push_screen(AlertsModal(snapshot=app._last_snapshot, ports=app._last_ports,
-                                          routes=app._last_routes, storage=app._last_storage))
+        t = app.telemetry
+        await app.push_screen(AlertsModal(snapshot=t.snapshot, ports=t.ports, routes=t.routes, storage=t.storage))
         await pilot.pause()
         app.pop_screen()
         await pilot.pause()
@@ -113,7 +113,7 @@ async def test_normal_data_has_no_literal_markup_tags():
     """Regression guard for PlainTable: intended styling must not leak as raw `[bold]` text."""
     app = ServerTUIApp(collector=DemoCollector(), poll_interval=60)
     async with app.run_test(size=(160, 50)) as pilot:
-        await pilot.pause()
+        await settle(pilot)
         console = Console(width=200, file=open("/dev/null", "w"))
         for widget in (app.header_bar, app.vitals_panel, app.alert_ticker, app.port_table, app.all_ports_table,
                        app.top_processes_panel, app.log_viewer, app.backup_panel, app.service_panel,

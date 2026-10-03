@@ -26,7 +26,8 @@ def calculate_audit_score(
     score -= len(risky_ports) * 15
 
     # Firewall inactive (-15)
-    if not snapshot.firewall.is_active or (security and not security.firewall_active):
+    firewall_off = snapshot.firewall.known and not snapshot.firewall.is_active
+    if firewall_off or (security and security.firewall_known and not security.firewall_active):
         score -= 15
 
     # SSH PermitRootLogin (-10)
@@ -183,7 +184,7 @@ def generate_audit_markdown(
             "---",
             "",
             "## 6. 🛡️ SSH SERTLEŞTİRME & GÜVENLİK DUVARI DENETİMİ",
-            f"* **Güvenlik Duvarı:** `{security.firewall_name}` — Durum: {'AKTİF ✓' if security.firewall_active else 'KAPALI 🚨'}",
+            f"* **Güvenlik Duvarı:** `{security.firewall_name}` — Durum: {'BİLİNMİYOR (root gerekli)' if not security.firewall_known else ('AKTİF ✓' if security.firewall_active else 'KAPALI 🚨')}",
             f"* **SSH Portu:** `:{security.ssh.port}`",
             f"* **Root ile Doğrudan Giriş (PermitRootLogin):** `{security.ssh.permit_root_login}` {'(ÖNERİLMEZ ⚠️)' if security.ssh.permit_root_login == 'yes' else '(GÜVENLİ ✓)'}",
             f"* **Şifreli Giriş (PasswordAuthentication):** `{security.ssh.password_authentication}`",
@@ -266,7 +267,7 @@ def generate_audit_markdown(
     if storage and storage.is_cache_bloated:
         recs.append(f"- [ ] **Önbellek Temizliği:** BuildKit önbelleği `{storage.buildkit_cache_human}` seviyesine ulaşmış! `docker builder prune -f --keep-storage 10GB` çalıştırın.")
         recs.append("- [ ] **Kalıcı GC:** `/etc/docker/daemon.json` dosyasına `\"builder\": {\"gc\": {\"defaultKeepStorage\": \"10GB\"}}` ekleyin.")
-    if not snapshot.firewall.is_active:
+    if snapshot.firewall.known and not snapshot.firewall.is_active:
         recs.append("- [ ] **Güvenlik Duvarı:** Güvenlik duvarı devre dışı! `sudo ufw enable` ile aktif edin.")
 
     if not recs:

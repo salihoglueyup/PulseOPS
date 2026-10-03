@@ -13,6 +13,7 @@ class HeaderBar(Widget):
     alerts_count = reactive(0)
     user_label = reactive("")
     access_limited = reactive(False)
+    error_message = reactive("")
     theme_name = reactive("Silver Minimal")
     current_time = reactive("")
 
@@ -27,7 +28,10 @@ class HeaderBar(Widget):
         t = Text()
         t.append(" ⚡ PULSEOPS ", style="bold #0d1117 on #f0f6fc")
         t.append(" ", style="")
-        t.append("● LIVE", style="bold #3fb950")
+        if self.error_message:
+            t.append(f"⚠ BAĞLANTI HATASI: {self.error_message[:60]} (yeniden deneniyor)", style="bold #ffffff on #da3633")
+        else:
+            t.append("● LIVE", style="bold #3fb950")
         t.append(" │ ", style="#30363d")
         t.append(f"{self.hostname} ", style="bold #f0f6fc")
         t.append("│ ", style="#30363d")

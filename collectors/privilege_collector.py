@@ -3,17 +3,6 @@ import shutil
 
 from models.privileges import PrivilegeInfo
 
-# Appended to the SSH batch probe; parsed by parse_privileges_section()
-PRIV_PROBE = (
-    'echo "===SECTION:PRIV==="\n'
-    "id -un 2>/dev/null\n"
-    "id -u 2>/dev/null\n"
-    "command -v docker >/dev/null 2>&1 && echo docker_installed\n"
-    "[ -w /var/run/docker.sock ] && echo docker_ok\n"
-    "sudo -n true 2>/dev/null && echo sudo_ok\n"
-)
-
-
 def _docker_socket_accessible() -> bool:
     if os.environ.get("DOCKER_HOST"):
         return True
@@ -44,7 +33,7 @@ def collect_local_privileges() -> PrivilegeInfo:
 
 
 def parse_privileges_section(text: str) -> PrivilegeInfo:
-    """Parses the PRIV section of the SSH probe. The SSH probe falls back to `sudo -n`, so sudo counts as elevated."""
+    """Parses the PRIV probe section. The probe falls back to `sudo -n`, so passwordless sudo counts as elevated."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if len(lines) < 2 or not lines[1].isdigit():
         # Unknown (old probe or failed command): assume full access rather than showing false warnings

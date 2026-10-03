@@ -58,29 +58,54 @@ Amaç: Herhangi bir Linux sunucusunda tek komutla kurulup `pulseops` ile sorunsu
 - ✅ `pulseops report --format md|json [-o DİZİN | -o -]`
 - ✅ `pulseops check [--warn N --crit N]` — Nagios uyumlu çıkış kodu ve perfdata
 
-## Faz 2 — Mimari
+## Faz 2 — Mimari ✅
 
 Amaç: Arayüz hiç donmasın, yerel ve SSH modu aynı kod yolunu kullansın.
 
-- ⬜ Polling'in Textual thread worker'a taşınması (şu an her turda UI ~0.2 sn donuyor)
-- 🚧 Tek `Telemetry` Pydantic modeli (`models/telemetry.py`, CLI komutları kullanıyor); TUI'nin de buna
-  geçmesi, `poll()` tuple'ı ve `hasattr` kontrollerinin kaldırılması
-- ⬜ Tek veri toplama yolu: yerel modda da aynı probe betiği + aynı parser
-- ⬜ Hızlı / yavaş polling katmanları (CPU/RAM/port ≈ 2 sn; servis/docker/depolama/yedek ≈ 30–60 sn)
-  — hedef: canlı modda boşta < %2 CPU (Faz 1 ölçümü: %18)
-- ⬜ Hataların yutulmaması: bağlantı/toplama hatası banner'ı + `~/.cache/pulseops/pulseops.log`
-- ⬜ Yapılandırma dosyası: `/etc/pulseops/config.toml`, `~/.config/pulseops/config.toml`
+- ✅ Polling Textual thread worker'da; turlar üst üste binmez, UI hiç beklemez
+- ✅ Tek `Telemetry` modeli ve tek giriş noktası `collector.collect(include_slow, include_logs)`;
+  `poll()` tuple'ı ve `hasattr` kontrolleri TUI'den kaldırıldı
+- ✅ Tek veri toplama yolu: Linux'ta yerel mod da aynı shell probe'u (`sh -s`) çalıştırır
+  (`ProbeCollector` + `LocalTransport` / `SSHTransport`)
+- ✅ Hızlı / yavaş / log katmanları (2 sn / 30 sn / yalnızca Loglar sekmesinde); nadir değişen bölümler 10 dk
+- ✅ Hatalar görünür: header'da bağlantı uyarısı, tek seferlik bildirim, toparlanma bildirimi,
+  `~/.cache/pulseops/pulseops.log`
+- ✅ Yapılandırma: `/etc/pulseops/config.toml`, `~/.config/pulseops/config.toml`, `pulseops config [--init]`
+
+Ölçüm (4 çekirdek, 140x40 terminal, 30 sn, TUI + başlattığı tüm alt süreçler, tek çekirdek yüzdesi):
+
+| Mod | Faz 1 | Faz 2 |
+| :--- | ---: | ---: |
+| `--demo` (yalnızca render) | %1.0 | %0.8 |
+| Yerel canlı, 2 sn (Faz 1'de 1.5 sn) | %18.1 | %2.1 |
+| Yerel canlı, 5 sn | %5.8 | %1.3 |
+| SSH (istemci tarafı) | — | %1.5 |
+
+Hızlı tur hedefte ~15 ms CPU (önce ~226 ms), SSH üzerinden ~55 ms duvar saati.
+
+Bu fazda bulunan ve düzeltilen hatalar:
+- **Güvenlik:** Log satırı, süreç adı, domain gibi sunucudan gelen metinler Rich markup olarak
+  yorumlanıyordu: `GET /[/]` isteği TUI'yi çökertiyor, `[link=...]` terminale tıklanabilir link ekliyordu
+- **Güvenlik:** Probe root olarak bile her 2 sn'de `sudo -n` çağırıyor, sunucunun auth log'unu dolduruyordu
+- SSH modunda CPU yüzdesi load average'dan tahmin ediliyordu; çekirdek başı değerler sahte, disk I/O hep 0
+- Güvenlik duvarı: SSH modunda modelde olmayan alanlar gönderildiği için durum hep "Aktif" görünüyordu;
+  yerel modda okunamayan durum "aktif" sayılıyordu; Docker'ın iptables/nft kuralları "aktif" sanılıyordu
+- `sshd_config`: varsayılanlar ve öncelik yanlıştı (OpenSSH'ta ilk değer geçerli, `Match` blokları
+  koşullu); artık mümkünse `sshd -T` ile etkin yapılandırma okunuyor
+- Yerel modda nginx access log her turda baştan sona okunuyordu (GB'larca log dosyasında ciddi yük)
+- `ss`/`netstat` olmayan sistemlerde port listesi boş kalıyordu (`/proc/net` yedeği eklendi)
 
 ## Faz 3 — Güvenlik
 
 Amaç: Bir güvenlik/gözlem aracının kendisi güvenli olsun; güvenlik paneli SOC için değerli veri sunsun.
 
 - ⬜ SSH host key doğrulaması (`known_hosts`), bilinmeyen anahtarda fingerprint onayı
-  (`AutoAddPolicy` kaldırılacak)
+  (`AutoAddPolicy` kaldırılacak — `collectors/transport.py`)
 - ⬜ `~/.ssh/config`, ssh-agent ve ProxyJump desteği
 - ⬜ Şifrenin CLI argümanından kaldırılması (`PULSEOPS_SSH_PASSWORD` veya prompt)
 - ⬜ fail2ban durumu, son başarısız SSH girişleri, sudoers / yetkili kullanıcı denetimi
-- ⬜ Salt-okunur garantisinin dokümantasyonu (`sudo -n` kullanımı dahil)
+- 🚧 Salt-okunur garantisinin dokümantasyonu (sudo davranışı Faz 2'de belgelendi; çalıştırılan
+  komutların tam listesi eklenecek)
 
 ## Faz 5 — Ürünleşme
 

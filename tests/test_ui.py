@@ -6,6 +6,7 @@ from textual.widgets import TabbedContent
 from ui.modals.port_finder_modal import PortFinderModal
 from ui.modals.alerts_modal import AlertsModal
 from ui.modals.config_viewer_modal import ConfigViewerModal
+from conftest import settle
 
 @pytest.mark.asyncio
 async def test_app_lifecycle_headless(tmp_path, monkeypatch):
@@ -27,7 +28,7 @@ async def test_app_lifecycle_headless(tmp_path, monkeypatch):
         assert app.dashboard_status_bar is not None
 
         # Verify initial data populated
-        await pilot.pause()
+        await settle(pilot)
         assert app.header_bar.hostname != ""
         assert len(app.port_table.routes) > 0
         assert len(app.backup_panel.tasks) > 0
