@@ -116,6 +116,8 @@ class HistoryStore:
         key = host_key(t)
         current = fingerprint(t)
         with self._db() as db:
+            # Same machine seen through several routes in parallel (local + SSH, fleet): one at a time
+            db.execute("BEGIN IMMEDIATE")
             self._touch_host(db, t, ts)
             row = db.execute("SELECT fingerprint FROM baselines WHERE host_id = ?", (key,)).fetchone()
             changes = diff(json.loads(row[0]), current) if row else []

@@ -492,6 +492,8 @@ def parse_access(text: str) -> AccessAudit:
             if count.isdigit():
                 audit.authorized_keys[user] = int(count)
                 audit.keys_known = True
+            elif count == "?":
+                audit.authorized_keys_unknown.append(user)
     if "UNKNOWN" in sudoers_lines:
         audit.sudoers_known = False
         sudoers_lines.remove("UNKNOWN")

@@ -36,25 +36,29 @@ def fingerprint(t: Telemetry) -> Fingerprint:
     access = sec.access
     fp: Fingerprint = {}
 
-    public, local = [], []
+    # Ports are compared on proto/ip/port only: the owning process name depends on the observer's
+    # privileges and changes on restarts. The name is kept after a tab, for messages.
+    public, local = {}, {}
     for p in t.ports:
         if p.exposure == PortExposure.SYSTEM_RPC:
             continue
-        item = f"{p.proto} {p.ip}:{p.port} ({p.process_name or '?'})"
-        if _is_loopback(p.ip):
-            if p.port not in EPHEMERAL_PORTS:
-                local.append(item)
-        else:
-            public.append(item)
-    fp["ports_public"] = sorted(set(public))
-    fp["ports_local"] = sorted(set(local))
+        key = f"{p.proto} {p.ip}:{p.port}"
+        bucket = local if _is_loopback(p.ip) else public
+        if bucket is local and p.port in EPHEMERAL_PORTS:
+            continue
+        if p.process_name or key not in bucket:
+            bucket[key] = f"{key}\t{p.process_name or '?'}"
+    fp["ports_public"] = sorted(public.values())
+    fp["ports_local"] = sorted(local.values())
 
     fp["login_users"] = sorted(access.login_users) if access.login_users else None
     fp["uid0_users"] = sorted(access.uid0_users) if access.uid0_users else None
     fp["admin_users"] = sorted(access.admin_users) if access.login_users else None
     fp["nopasswd_rules"] = sorted(access.nopasswd_rules) if access.sudoers_known else None
     fp["authorized_keys"] = (
-        sorted(f"{user}={count}" for user, count in access.authorized_keys.items()) if access.keys_known else None
+        sorted([f"{user}={count}" for user, count in access.authorized_keys.items()]
+               + [f"{user}=?" for user in access.authorized_keys_unknown])
+        if access.keys_known else None
     )
     fp["firewall"] = [("active" if sec.firewall_active else "inactive")] if sec.firewall_known else None
     if sec.ssh.permit_root_login in ("?", "KAPALI"):
@@ -84,16 +88,18 @@ def diff(old: Fingerprint, new: Fingerprint) -> list[Change]:
     def add(category: str, severity: str, message: str) -> None:
         changes.append(Change(category=category, severity=severity, message=message))
 
-    if both("ports_public"):
-        added, removed = _added_removed(old["ports_public"], new["ports_public"])
-        for item in added:
-            add("port", HIGH, f"Yeni dışa açık port: {item}")
-        for item in removed:
-            add("port", INFO, f"Dışa açık port kapandı: {item}")
-    if both("ports_local"):
-        added, removed = _added_removed(old["ports_local"], new["ports_local"])
-        for item in added:
-            add("port", INFO, f"Yeni yerel port: {item}")
+    for key, label_new, label_closed in (("ports_public", "Yeni dışa açık port", "Dışa açık port kapandı"),
+                                         ("ports_local", "Yeni yerel port", None)):
+        if not both(key):
+            continue
+        before = dict(item.split("\t", 1) if "\t" in item else (item.rsplit(" (", 1)[0], "?") for item in old[key])
+        after = dict(item.split("\t", 1) if "\t" in item else (item.rsplit(" (", 1)[0], "?") for item in new[key])
+        severity = HIGH if key == "ports_public" else INFO
+        for port in sorted(set(after) - set(before)):
+            add("port", severity, f"{label_new}: {port} ({after[port]})")
+        if label_closed:
+            for port in sorted(set(before) - set(after)):
+                add("port", INFO, f"{label_closed}: {port} ({before[port]})")
 
     if both("uid0_users"):
         added, _ = _added_removed(old["uid0_users"], new["uid0_users"])
@@ -121,6 +127,8 @@ def diff(old: Fingerprint, new: Fingerprint) -> list[Change]:
         before = dict(item.split("=", 1) for item in old["authorized_keys"])
         after = dict(item.split("=", 1) for item in new["authorized_keys"])
         for user in sorted(set(before) | set(after)):
+            if before.get(user) == "?" or after.get(user) == "?":
+                continue  # one of the observers could not read this user's keys
             b, a = int(before.get(user, 0)), int(after.get(user, 0))
             if a > b:
                 add("ssh_key", HIGH, f"{user} hesabına {a - b} yeni SSH anahtarı eklendi ({b} → {a})")

@@ -200,3 +200,37 @@ async def test_tui_records_history_and_shows_modal(tmp_path, base):
         await pilot.press("escape")
         await pilot.pause()
         assert type(app.screen).__name__ != "HistoryModal"
+
+
+def test_observer_privileges_do_not_create_drift(base):
+    """The same machine seen as root and as a normal user (local + SSH, fleet) must look unchanged."""
+    root_view = base.model_copy(deep=True)
+    root_view.ports = [ListeningPort(proto="tcp", ip="0.0.0.0", port=22, process_name="sshd", pid=1,
+                                     exposure=PortExposure.ADMIN_SSH)]
+    root_view.security.access.authorized_keys = {"root": 1, "deploy": 2}
+    user_view = base.model_copy(deep=True)
+    user_view.ports = [ListeningPort(proto="tcp", ip="0.0.0.0", port=22, exposure=PortExposure.ADMIN_SSH)]
+    user_view.security.access.authorized_keys = {"deploy": 2}
+    user_view.security.access.authorized_keys_unknown = ["root"]
+
+    assert diff(fingerprint(root_view), fingerprint(user_view)) == []
+    assert diff(fingerprint(user_view), fingerprint(root_view)) == []
+    # a restart under another process name is not a new port either
+    renamed = root_view.model_copy(deep=True)
+    renamed.ports[0] = renamed.ports[0].model_copy(update={"process_name": "sshd-session"})
+    assert diff(fingerprint(root_view), fingerprint(renamed)) == []
+
+
+def test_old_baseline_port_format_still_compares(base):
+    old = fingerprint(base)
+    old["ports_public"] = ["tcp 0.0.0.0:22 (sshd)"]
+    new = fingerprint(base)
+    new["ports_public"] = ["tcp 0.0.0.0:22\tsshd", "tcp 0.0.0.0:8080\tnode"]
+    assert messages(diff(old, new)) == [(HIGH, "Yeni dışa açık port: tcp 0.0.0.0:8080 (node)")]
+
+
+def test_parse_access_unknown_homes():
+    from collectors import probe_parsers as pp
+
+    audit = pp.parse_access("#UID0\nroot\n#AUTHKEYS\nroot ?\ndeploy 2\n")
+    assert audit.authorized_keys == {"deploy": 2} and audit.authorized_keys_unknown == ["root"]

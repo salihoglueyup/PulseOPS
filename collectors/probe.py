@@ -103,7 +103,8 @@ ACCESS_PRIV_SCRIPT = (
     " | grep NOPASSWD | head -n 20 || true; [ -r /etc/sudoers ] || echo UNKNOWN;"
     " echo '#AUTHKEYS';"
     " awk -F: '$7 !~ /(nologin|false|sync|shutdown|halt)$/ {print $1, $6}' /etc/passwd | while read -r u h; do"
-    " f=\"$h/.ssh/authorized_keys\"; [ -f \"$f\" ] || continue;"
+    " f=\"$h/.ssh/authorized_keys\"; if [ ! -x \"$h\" ] || [ ! -x \"$h/.ssh\" -a -e \"$h/.ssh\" ]; then echo \"$u ?\"; continue; fi;"
+    " [ -f \"$f\" ] || continue;"
     " if [ -r \"$f\" ]; then echo \"$u $(grep -cvE '^[[:space:]]*(#|$)' \"$f\")\"; else echo \"$u ?\"; fi; done"
 )
 

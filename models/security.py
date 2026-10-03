@@ -73,6 +73,7 @@ class AccessAudit(BaseModel):
     nopasswd_rules: list[str] = Field(default_factory=list)
     keys_known: bool = False
     authorized_keys: dict[str, int] = Field(default_factory=dict)
+    authorized_keys_unknown: list[str] = Field(default_factory=list)  # home or ~/.ssh not readable
 
     @property
     def extra_uid0(self) -> list[str]:

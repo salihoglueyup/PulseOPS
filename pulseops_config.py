@@ -64,8 +64,20 @@ class HistoryConfig(_Section):
     )
 
 
+class FleetConfig(_Section):
+    hosts: list[str] = Field(
+        default_factory=list,
+        description='Filo: `pulseops fleet` ve `check --all` için sunucular (ör. "web01", "deploy@10.0.0.5:2222", "local")',
+    )
+    groups: dict[str, list[str]] = Field(
+        default_factory=dict, description='Gruplar (--group ile seçilir), ör. { web = ["web01", "web02"] }',
+    )
+    parallel: int = Field(8, ge=1, le=64, description="Aynı anda sorgulanacak en fazla sunucu")
+
+
 class Config(_Section):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
+    fleet: FleetConfig = Field(default_factory=FleetConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     ssh: SSHConfig = Field(default_factory=SSHConfig)
@@ -123,9 +135,17 @@ def _describe(error: ValidationError) -> str:
 
 
 def _toml_value(value) -> str:
+    import json
+
     if isinstance(value, bool):
         return "true" if value else "false"
-    return repr(value) if isinstance(value, (int, float)) else f'"{value}"'
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{ " + ", ".join(f"{json.dumps(k)} = {_toml_value(v)}" for k, v in value.items()) + " }"
+    return json.dumps(str(value), ensure_ascii=False)
 
 
 def render_config(config: Config, commented: bool = False) -> str:

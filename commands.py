@@ -77,13 +77,23 @@ def _getpass(prompt: str) -> Optional[str]:
     return value or None
 
 
-def _fail(message: str) -> None:
-    print(f"❌ [HATA] {message}", file=sys.stderr)
-    sys.exit(EXIT_UNKNOWN)
+class CollectorError(Exception):
+    """A host could not be connected to; the message is ready to show to the user."""
 
 
 def build_collector(args: argparse.Namespace, interactive: bool = True) -> BaseCollector:
-    """Creates the collector selected by the connection arguments. Exits the process on SSH failure.
+    """Like make_collector, but prints the error and exits (single-host commands and the TUI)."""
+    try:
+        return make_collector(args, interactive=interactive)
+    except CollectorError as e:
+        print(f"❌ [HATA] {e}", file=sys.stderr)
+        if interactive and getattr(e, "hint", None):
+            print(e.hint, file=sys.stderr)
+        sys.exit(EXIT_UNKNOWN)
+
+
+def make_collector(args: argparse.Namespace, interactive: bool = True) -> BaseCollector:
+    """Creates and connects the collector selected by the connection arguments; raises CollectorError.
 
     SSH authentication follows OpenSSH: keys (command line, ~/.ssh/config, ssh-agent, ~/.ssh/id_*)
     first; a passphrase or password is only asked for when a key is encrypted or keys are rejected.
@@ -127,29 +137,31 @@ def build_collector(args: argparse.Namespace, interactive: bool = True) -> BaseC
             transport.test_connection()
             break
         except paramiko.BadHostKeyException as e:
-            _fail(describe_bad_host_key(e))
+            raise CollectorError(describe_bad_host_key(e)) from e
         except UnknownHostKeyError as e:
-            _fail(str(e))
-        except paramiko.PasswordRequiredException:
+            raise CollectorError(str(e)) from e
+        except paramiko.PasswordRequiredException as e:
             if not can_prompt or transport.passphrase:
-                _fail("SSH anahtarı parola korumalı. ssh-agent'a ekleyin (ssh-add) veya etkileşimli çalıştırın.")
+                raise CollectorError(
+                    f"{target.label}: SSH anahtarı parola korumalı. ssh-agent'a ekleyin (ssh-add) veya etkileşimli çalıştırın."
+                ) from e
             transport.passphrase = _getpass("🔑 SSH anahtar parolası: ")
-        except paramiko.AuthenticationException:
+        except paramiko.AuthenticationException as e:
             if not can_prompt or transport.password:
-                _fail(f"{target.label}: kimlik doğrulaması reddedildi (anahtar/ssh-agent/şifre).")
+                raise CollectorError(f"{target.label}: kimlik doğrulaması reddedildi (anahtar/ssh-agent/şifre).") from e
             transport.password = _getpass(f"🔑 {target.label} için SSH şifresi: ")
         except (OSError, paramiko.SSHException, TransportError) as e:
             if "No authentication methods available" in str(e) and can_prompt and not transport.password:
                 # No key and no agent: paramiko never reached the server's auth step
                 transport.password = _getpass(f"🔑 {target.label} için SSH şifresi: ")
                 continue
-            print(f"❌ [HATA] {target.label}{via} adresine bağlanılamadı: {e}", file=sys.stderr)
-            if interactive:
-                print("💡 Olası nedenler: adres/port yanlış, sunucu kapalı veya bir güvenlik duvarı engelliyor.",
-                      file=sys.stderr)
-            sys.exit(EXIT_UNKNOWN)
+            if "No authentication methods available" in str(e):
+                raise CollectorError(f"{target.label}: kullanılabilir SSH anahtarı yok (ssh-agent / ~/.ssh/config).") from e
+            error = CollectorError(f"{target.label}{via} adresine bağlanılamadı: {e}")
+            error.hint = "💡 Olası nedenler: adres/port yanlış, sunucu kapalı veya bir güvenlik duvarı engelliyor."
+            raise error from e
     else:
-        _fail("Kimlik doğrulaması tamamlanamadı.")
+        raise CollectorError(f"{target.label}: kimlik doğrulaması tamamlanamadı.")
 
     transport.disable_prompts()
     collector = SSHCollector(transport, use_sudo=use_sudo)
@@ -328,6 +340,11 @@ def evaluate_check(score: int, warn: int, crit: int) -> int:
     return EXIT_OK
 
 
+STATE_LABEL = {EXIT_OK: "OK", EXIT_WARNING: "WARNING", EXIT_CRITICAL: "CRITICAL", EXIT_UNKNOWN: "UNKNOWN"}
+# Worst first when combining hosts: CRITICAL > UNKNOWN > WARNING > OK
+SEVERITY_RANK = {EXIT_OK: 0, EXIT_WARNING: 1, EXIT_UNKNOWN: 2, EXIT_CRITICAL: 3}
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     config = _config(args)
     args.warn = config.check.warn if args.warn is None else args.warn
@@ -335,7 +352,16 @@ def cmd_check(args: argparse.Namespace) -> int:
     if args.crit > args.warn:
         print("❌ --crit değeri --warn değerinden büyük olamaz.", file=sys.stderr)
         return EXIT_UNKNOWN
+    if getattr(args, "all", False) or getattr(args, "group", None):
+        return _check_fleet(args)
     t = _collect_or_exit(build_collector(args, interactive=False))
+    code, line = _check_telemetry(args, t)
+    print(line)
+    return code
+
+
+def _check_telemetry(args: argparse.Namespace, t: Telemetry) -> tuple[int, str]:
+    config = _config(args)
     score, grade = _score(t)
     alerts = summarize_alerts(t, config.alerts)
     code = evaluate_check(score, args.warn, args.crit)
@@ -354,15 +380,87 @@ def cmd_check(args: argparse.Namespace) -> int:
     if any(c.severity == "HIGH" for c in new_changes) and config.history.drift_exit != "none":
         code = max(code, EXIT_CRITICAL if config.history.drift_exit == "critical" else EXIT_WARNING)
 
-    label = {EXIT_OK: "OK", EXIT_WARNING: "WARNING", EXIT_CRITICAL: "CRITICAL"}[code]
+    label = STATE_LABEL[code]
     _notify_check(args, store, t, label, score, alerts, unreported)
     summary = f"; {'; '.join(alerts)}" if alerts else ""
     if new_changes:
         summary += "; DEĞİŞİKLİK: " + "; ".join(c.message for c in new_changes)
     # Single line + perfdata, the format monitoring systems (Nagios, Icinga, Zabbix) expect
-    print(f"PULSEOPS {label} - {t.snapshot.hostname} skor {score}/100 {grade}{summary}"
-          f" | score={score};{args.warn};{args.crit};0;100 alerts={len(alerts)} changes={len(new_changes)}")
-    return code
+    line = (f"PULSEOPS {label} - {t.snapshot.hostname} skor {score}/100 {grade}{summary}"
+            f" | score={score};{args.warn};{args.crit};0;100 alerts={len(alerts)} changes={len(new_changes)}")
+    return code, line
+
+
+def fleet_targets(config: Config, group: Optional[str] = None) -> list[str]:
+    if group:
+        if group not in config.fleet.groups:
+            known = ", ".join(sorted(config.fleet.groups)) or "yok"
+            raise CollectorError(f"'{group}' adında grup yok (tanımlı gruplar: {known})")
+        return list(config.fleet.groups[group])
+    seen: list[str] = []
+    for target in config.fleet.hosts + [h for members in config.fleet.groups.values() for h in members]:
+        if target not in seen:
+            seen.append(target)
+    return seen
+
+
+def _target_args(args: argparse.Namespace, target: str) -> argparse.Namespace:
+    one = argparse.Namespace(**vars(args))
+    one.host, one.target, one.all, one.group = None, target, False, None
+    one.demo = target in ("demo", "mock")
+    return one
+
+
+def _check_one_target(args: argparse.Namespace, target: str) -> tuple[int, str]:
+    one = _target_args(args, target)
+    try:
+        t = collect_telemetry(make_collector(one, interactive=False))
+    except Exception as e:  # unreachable host, auth failure, probe error...
+        message = str(e) if isinstance(e, CollectorError) else f"{target}: {e}"
+        _notify_unreachable(one, target, message)
+        return EXIT_UNKNOWN, f"PULSEOPS UNKNOWN - {target}: {message} | score=;;;0;100"
+    return _check_telemetry(one, t)
+
+
+def _check_fleet(args: argparse.Namespace) -> int:
+    from concurrent.futures import ThreadPoolExecutor
+
+    config = _config(args)
+    try:
+        targets = fleet_targets(config, args.group)
+    except CollectorError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return EXIT_UNKNOWN
+    if not targets:
+        print("Filoda sunucu yok: yapılandırmaya [fleet] hosts = [\"web01\", ...] ekleyin.", file=sys.stderr)
+        return EXIT_UNKNOWN
+    with ThreadPoolExecutor(max_workers=min(config.fleet.parallel, len(targets))) as pool:
+        results = list(pool.map(lambda target: _check_one_target(args, target), targets))
+    for _, line in results:
+        print(line)
+    counts = {label: sum(1 for code, _ in results if STATE_LABEL[code] == label) for label in STATE_LABEL.values()}
+    print("PULSEOPS FLEET - " + ", ".join(f"{n} {label}" for label, n in counts.items() if n) + f" ({len(targets)} sunucu)")
+    return max((code for code, _ in results), key=lambda c: SEVERITY_RANK[c])
+
+
+def _notify_unreachable(args: argparse.Namespace, target: str, message: str) -> None:
+    """An unreachable host is a state too (UNKNOWN): notify on the transition, and when it recovers."""
+    store = _history_store(args)
+    if store is None:
+        return
+    key = f"target:{target}"
+    try:
+        previous = store.get_meta(key, "check_state")
+        store.set_meta(key, "check_state", "UNKNOWN")
+    except Exception:
+        get_logger("history").exception("check durumu kaydedilemedi")
+        return
+    config = _config(args)
+    if config.notify.channels and config.notify.on_state_change and previous not in (None, "UNKNOWN"):
+        from notify import Notification, dispatch
+        for error in dispatch(config.notify, Notification(host=target, state="UNKNOWN", previous_state=previous,
+                                                          alerts=[f"Erişilemiyor: {message}"])):
+            print(f"⚠️  Bildirim gönderilemedi: {error}", file=sys.stderr)
 
 
 def _notify_check(args, store, t: Telemetry, state: str, score: int, alerts: list, changes: list) -> None:
@@ -375,6 +473,12 @@ def _notify_check(args, store, t: Telemetry, state: str, score: int, alerts: lis
         from history import host_key
         try:
             previous = store.get_meta(host_key(t), "check_state")
+            target = getattr(args, "target", None)
+            if target:
+                # a host that was unreachable is tracked by its target name until it answers again
+                if store.get_meta(f"target:{target}", "check_state") == "UNKNOWN":
+                    previous = "UNKNOWN"
+                store.set_meta(f"target:{target}", "check_state", state)
             store.set_meta(host_key(t), "check_state", state)
         except Exception:
             get_logger("history").exception("check durumu kaydedilemedi")
@@ -509,6 +613,8 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
         help="Sağlık skoruna göre çıkış kodu döner (0 OK, 1 WARNING, 2 CRITICAL, 3 UNKNOWN)",
     )
     add_connection_args(p_check)
+    p_check.add_argument("--all", action="store_true", help="[fleet] içindeki tüm sunucuları paralel kontrol et")
+    p_check.add_argument("--group", default=None, help="Yalnızca bu filo grubunu kontrol et")
     p_check.add_argument("--warn", type=int, default=None, help="Bu skorun altı WARNING (varsayılan: config, yoksa 80)")
     p_check.add_argument("--crit", type=int, default=None, help="Bu skorun altı CRITICAL (varsayılan: config, yoksa 50)")
     p_check.set_defaults(func=cmd_check)
