@@ -1,0 +1,106 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio
+      - name: Run Pytest
+        run: pytest -v
+
+  build:
+    needs: test
+    name: Build Standalone Executables
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: pulseops-linux-amd64
+            asset_name: pulseops-linux-amd64
+            sep: ":"
+          - os: windows-latest
+            artifact_name: pulseops.exe
+            asset_name: pulseops-windows-amd64.exe
+            sep: ";"
+          - os: macos-latest
+            artifact_name: pulseops-macos-arm64
+            asset_name: pulseops-macos-arm64
+            sep: ":"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build with PyInstaller (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          pyinstaller --noconfirm --clean --onefile \
+            --name ${{ matrix.artifact_name }} \
+            --collect-all textual \
+            --add-data "ui/styles.tcss${{ matrix.sep }}ui" \
+            cli.py
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller --noconfirm --clean --onefile `
+            --name pulseops `
+            --collect-all textual `
+            --add-data "ui/styles.tcss;ui" `
+            cli.py
+          Move-Item dist/pulseops.exe dist/${{ matrix.asset_name }}
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.asset_name }}
+
+  release:
+    needs: build
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
