@@ -129,6 +129,7 @@ Bu fazda bulunan ve düzeltilen hatalar:
 - ✅ Güvenlik değişikliği tespiti + geçmiş (SQLite): yeni dışa açık port, UID 0 / sudo / NOPASSWD / SSH anahtarı
   değişiklikleri, güvenlik duvarı, sshd, fail2ban, servisler, konteynerler; TUI bildirimi ve `h` modalı (trend +
   akış), `pulseops history`, `check` entegrasyonu (son `check`'ten beri, WARNING'e yükseltme), cron ile sürekli gözlem
-- ⬜ Bildirimler: webhook, Slack, Telegram, Discord, e-posta
+- ✅ Bildirimler: webhook, Slack, Discord, Telegram, e-posta; yalnızca durum geçişi ve yeni değişiklikte
+  (tekrar yok), kanal başına kaçışlama, `env:` sırları, `pulseops notify --test`
 - ⬜ Çoklu sunucu: `~/.ssh/config` grupları, filo görünümü, `check --all`
 - ⬜ `.deb` / `.rpm` paketleri

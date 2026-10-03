@@ -15,6 +15,8 @@ EPILOG = """komutlar:
   pulseops check                sağlık skoruna göre çıkış kodu (cron / monitoring)
   pulseops config [--init]      yapılandırmayı göster / şablon oluştur
   pulseops probe [--tier ...]   sunucuda çalışan salt-okunur betiği göster (denetim)
+  pulseops history [--since]    kayıtlı trendler ve güvenlik değişiklikleri
+  pulseops notify --test        bildirim kanallarını dene
   pulseops update | uninstall   kendini günceller / kaldırır
   pulseops version              sürüm bilgisi
 """

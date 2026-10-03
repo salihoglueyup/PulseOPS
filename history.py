@@ -145,6 +145,15 @@ class HistoryStore:
             return []
         return [c for c in self.changes(host_id, since=float(row[0])) if c.ts <= now][::-1]
 
+    def get_meta(self, host_id: str, key: str) -> Optional[str]:
+        with self._db() as db:
+            row = db.execute("SELECT value FROM meta WHERE host_id = ? AND key = ?", (host_id, key)).fetchone()
+        return row[0] if row else None
+
+    def set_meta(self, host_id: str, key: str, value: str) -> None:
+        with self._db() as db:
+            db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?, ?)", (host_id, key, value))
+
     def reset_baseline(self, host_id: str) -> None:
         with self._db() as db:
             db.execute("DELETE FROM baselines WHERE host_id = ?", (host_id,))

@@ -78,5 +78,7 @@ bir nonce içerir; komut çıktısı sahte bölüm enjekte edemez.
 | `audit-reports/*.md` | `e` tuşu veya `pulseops report` ile |
 | `~/.local/share/pulseops/history.db` | Metrik örnekleri (30 gün) ve güvenlik değişiklikleri (180 gün); 0600, dizin 0700. Kullanıcı adları, port/süreç adları ve sudoers satırları içerir. Kapatmak için `[history] enabled = false` |
 
-PulseOps, SSH bağlantısı ve `pulseops update` (GitHub release, SHA-256 doğrulamalı) dışında ağ bağlantısı
-kurmaz; telemetri hiçbir yere gönderilmez.
+PulseOps, SSH bağlantısı, `pulseops update` (GitHub release, SHA-256 doğrulamalı) ve **sizin tanımladığınız**
+bildirim kanalları dışında ağ bağlantısı kurmaz. Bildirimler yalnızca `check` sonucunun özetini (durum, skor,
+uyarılar, güvenlik değişiklikleri) içerir; ham telemetri gönderilmez. Kanal sırları için `env:DEGISKEN` kullanın;
+düz metin sır içeren bir yapılandırma dosyası başka kullanıcılarca okunabiliyorsa PulseOps uyarır.

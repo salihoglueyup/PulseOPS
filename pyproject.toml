@@ -30,7 +30,7 @@ pulsetui = "cli:main"
 server-tui = "cli:main"
 
 [tool.setuptools]
-py-modules = ["cli", "main", "commands", "installer", "version", "pulseops_config", "logging_setup", "history"]
+py-modules = ["cli", "main", "commands", "installer", "version", "pulseops_config", "logging_setup", "history", "notify"]
 
 [tool.setuptools.dynamic]
 version = {attr = "version.__version__"}

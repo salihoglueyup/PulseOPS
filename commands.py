@@ -343,17 +343,19 @@ def cmd_check(args: argparse.Namespace) -> int:
     # Security drift since the previous `check` (whoever detected it: TUI, status or check)
     store = _history_store(args)
     _record_history(store, t, config)
-    new_changes = []
+    unreported = []
     if store is not None:
         from history import host_key
         try:
-            new_changes = [c for c in store.take_unreported(host_key(t), "check") if c.severity != "INFO"]
+            unreported = store.take_unreported(host_key(t), "check")
         except Exception:
             get_logger("history").exception("Değişiklikler okunamadı")
+    new_changes = [c for c in unreported if c.severity != "INFO"]
     if any(c.severity == "HIGH" for c in new_changes) and config.history.drift_exit != "none":
         code = max(code, EXIT_CRITICAL if config.history.drift_exit == "critical" else EXIT_WARNING)
 
     label = {EXIT_OK: "OK", EXIT_WARNING: "WARNING", EXIT_CRITICAL: "CRITICAL"}[code]
+    _notify_check(args, store, t, label, score, alerts, unreported)
     summary = f"; {'; '.join(alerts)}" if alerts else ""
     if new_changes:
         summary += "; DEĞİŞİKLİK: " + "; ".join(c.message for c in new_changes)
@@ -361,6 +363,64 @@ def cmd_check(args: argparse.Namespace) -> int:
     print(f"PULSEOPS {label} - {t.snapshot.hostname} skor {score}/100 {grade}{summary}"
           f" | score={score};{args.warn};{args.crit};0;100 alerts={len(alerts)} changes={len(new_changes)}")
     return code
+
+
+def _notify_check(args, store, t: Telemetry, state: str, score: int, alerts: list, changes: list) -> None:
+    """Sends a notification on a state transition or new security changes (never on a repeat)."""
+    from notify import build_check_notification, dispatch
+
+    config = _config(args)
+    previous = None
+    if store is not None:
+        from history import host_key
+        try:
+            previous = store.get_meta(host_key(t), "check_state")
+            store.set_meta(host_key(t), "check_state", state)
+        except Exception:
+            get_logger("history").exception("check durumu kaydedilemedi")
+    if not config.notify.channels:
+        return
+    _warn_plaintext_secrets(args)
+    n = build_check_notification(config.notify, t.snapshot.hostname, state, previous, score, alerts, changes)
+    if n is None:
+        return
+    for error in dispatch(config.notify, n):
+        print(f"⚠️  Bildirim gönderilemedi: {error}", file=sys.stderr)
+
+
+def _warn_plaintext_secrets(args) -> None:
+    """Literal tokens/passwords in a config file that other users can read are a leak waiting to happen."""
+    import stat as stat_mod
+
+    channels = _config(args).notify.channels
+    secrets = [getattr(ch, f, "") for ch in channels for f in ("url", "bot_token", "password")]
+    if not any(v and not v.startswith("env:") for v in secrets):
+        return
+    for path in getattr(args, "config_files", []):
+        try:
+            mode = path.stat().st_mode
+        except OSError:
+            continue
+        if mode & (stat_mod.S_IRGRP | stat_mod.S_IROTH):
+            print(f"⚠️  {path} başka kullanıcılar tarafından okunabiliyor ve bildirim sırları içeriyor: "
+                  f"`chmod 600 {path}` veya sırlar için \"env:DEGISKEN\" kullanın.", file=sys.stderr)
+
+
+def cmd_notify(args: argparse.Namespace) -> int:
+    from notify import Notification, dispatch
+
+    config = _config(args)
+    if not config.notify.channels:
+        print("Bildirim kanalı tanımlı değil. Örnekler için: pulseops config --init (veya pulseops config)")
+        return EXIT_UNKNOWN
+    _warn_plaintext_secrets(args)
+    import socket
+    errors = dispatch(config.notify, Notification(host=socket.gethostname(), state="OK", test=True))
+    for ch in config.notify.channels:
+        label = ch.name or ch.type
+        failed = [e for e in errors if e.startswith(f"{label}:")]
+        print(f"{'❌' if failed else '✅'} {label}" + (f": {failed[0].split(': ', 1)[1]}" if failed else ""))
+    return EXIT_WARNING if errors else EXIT_OK
 
 
 def _parse_since(value: str) -> float:
@@ -464,6 +524,10 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     p_history.add_argument("--json", action="store_true", help="JSON çıktı")
     p_history.set_defaults(func=cmd_history)
 
+    p_notify = sub.add_parser("notify", help="Bildirim kanallarına deneme mesajı gönderir")
+    p_notify.add_argument("--test", action="store_true", required=True, help="Her kanala deneme mesajı gönder")
+    p_notify.set_defaults(func=cmd_notify)
+
     p_probe = sub.add_parser("probe", help="Sunucuda çalıştırılan salt-okunur betiği gösterir (denetim için)")
     p_probe.add_argument("--tier", choices=["fast", "slow", "logs", "all"], default="all",
                          help="fast: her 2 sn, slow: her 30 sn, logs: Loglar sekmesi açıkken (varsayılan: all)")
@@ -476,7 +540,7 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     return parser
 
 
-SUBCOMMANDS = ("status", "report", "check", "history", "config", "probe", "update", "uninstall", "version")
+SUBCOMMANDS = ("status", "report", "check", "history", "notify", "config", "probe", "update", "uninstall", "version")
 
 
 def cmd_probe(args: argparse.Namespace) -> int:

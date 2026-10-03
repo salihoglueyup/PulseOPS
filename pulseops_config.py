@@ -10,6 +10,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from notify import NotifyConfig
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover - exercised on Python 3.10 in CI
@@ -64,6 +66,7 @@ class HistoryConfig(_Section):
 
 class Config(_Section):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
+    notify: NotifyConfig = Field(default_factory=NotifyConfig)
     history: HistoryConfig = Field(default_factory=HistoryConfig)
     ssh: SSHConfig = Field(default_factory=SSHConfig)
     check: CheckConfig = Field(default_factory=CheckConfig)
@@ -131,12 +134,48 @@ def render_config(config: Config, commented: bool = False) -> str:
     for section_name, section in config:
         lines.append(f"[{section_name}]")
         for key, field in type(section).model_fields.items():
+            value = getattr(section, key)
+            if isinstance(value, list) and key == "channels":
+                lines.extend(_channel_lines(value, commented))
+                continue
             if field.description:
                 lines.append(f"# {field.description}")
-            line = f"{key} = {_toml_value(getattr(section, key))}"
+            line = f"{key} = {_toml_value(value)}"
             lines.append(f"# {line}" if commented else line)
         lines.append("")
     return "\n".join(lines)
+
+
+CHANNEL_EXAMPLES = """# Bildirim kanalları (yalnızca `pulseops check` gönderir; durum değişince ve yeni güvenlik değişikliğinde).
+# Gizli değerler için "env:DEGISKEN" yazabilirsiniz; deneme: pulseops notify --test
+#
+# [[notify.channels]]
+# type = "telegram"
+# bot_token = "env:PULSEOPS_TELEGRAM_TOKEN"
+# chat_id = "123456789"
+#
+# [[notify.channels]]
+# type = "slack"            # veya "discord", "webhook" (JSON POST)
+# url = "env:PULSEOPS_SLACK_WEBHOOK"
+#
+# [[notify.channels]]
+# type = "email"
+# smtp_host = "smtp.ornek.com"
+# smtp_port = 587
+# security = "starttls"     # starttls | ssl | none
+# username = "alarm@ornek.com"
+# password = "env:PULSEOPS_SMTP_PASSWORD"
+# sender = "alarm@ornek.com"
+# to = ["ops@ornek.com"]"""
+
+
+def _channel_lines(channels: list, commented: bool) -> list[str]:
+    if commented or not channels:
+        return CHANNEL_EXAMPLES.splitlines()
+    out = [f"# {len(channels)} kanal tanımlı:"]
+    for ch in channels:
+        out.append(f"#   {ch.type}" + (f" ({ch.name})" if ch.name else ""))
+    return out
 
 
 TEMPLATE_HEADER = """# PulseOps yapılandırması

@@ -152,7 +152,34 @@ Ajansız olduğu için geçmiş PulseOps çalıştıkça birikir. Sürekli gözl
 `pulseops check`, kim tespit etmiş olursa olsun (TUI, `status`, önceki `check`) **son `check`'ten beri**
 oluşan değişiklikleri bir kez raporlar.
 
-### 6. Yapılandırma
+### 6. Bildirimler (Telegram, Slack, Discord, e-posta, webhook)
+
+Cron'daki `pulseops check` yalnızca **durum değiştiğinde** (OK → WARNING, WARNING → CRITICAL, düzelince → OK)
+ve **yeni güvenlik değişikliğinde** bildirim gönderir; aynı uyarı her 5 dakikada tekrar edilmez.
+
+```toml
+# ~/.config/pulseops/config.toml  (chmod 600)
+[notify]
+min_severity = "MEDIUM"           # HIGH | MEDIUM | INFO
+
+[[notify.channels]]
+type = "telegram"
+bot_token = "env:PULSEOPS_TELEGRAM_TOKEN"   # sırlar ortam değişkeninden okunabilir
+chat_id = "123456789"
+
+[[notify.channels]]
+type = "slack"                    # "discord" ve "webhook" (JSON POST) de aynı biçimde: url = "..."
+url = "env:PULSEOPS_SLACK_WEBHOOK"
+```
+
+```bash
+pulseops notify --test            # her kanala deneme mesajı
+```
+
+Sunucudan gelen metinler (süreç/kullanıcı adları) her kanal için kaçışlanır: Slack'te `<url|metin>`, Discord'da
+`[metin](url)` gibi sahte linklere veya `@everyone` gibi bahsetmelere dönüşemez.
+
+### 7. Yapılandırma
 
 ```bash
 pulseops config           # geçerli ayarlar ve okunan dosyalar
@@ -185,7 +212,7 @@ Sorun giderme için log dosyası: `~/.cache/pulseops/pulseops.log`.
 
 Güvenlik ekipleri için ayrıntılı model (çalıştırılan komutlar, sudo, SSH, yazılan dosyalar): [docs/SECURITY.md](docs/SECURITY.md).
 
-### 7. Nasıl Çalışır?
+### 8. Nasıl Çalışır?
 
 Yerel modda da SSH modunda da hedef makinede aynı salt-okunur shell betiği (`sh -s`) çalışır ve çıktısı aynı kodla ayrıştırılır. Ucuz ve sık değişen metrikler (CPU, RAM, ağ, portlar, süreçler) her 2 saniyede, `systemctl`, `docker`, `nginx -T` gibi ağır kontroller 30 saniyede bir toplanır; veri toplama ayrı bir thread'de yürür, arayüz hiç beklemez. 4 çekirdekli bir sunucuda canlı modun kendi tükettiği CPU tek çekirdeğin yaklaşık %2'si kadardır (`--interval 5` ile ~%1.3).
 
