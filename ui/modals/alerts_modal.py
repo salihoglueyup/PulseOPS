@@ -4,7 +4,7 @@ from textual.containers import Vertical, Horizontal
 from textual.widgets import Static, Button
 from textual.binding import Binding
 from rich.panel import Panel
-from rich.table import Table
+from ui.safe import PlainTable as Table
 from rich.text import Text
 
 from typing import Optional

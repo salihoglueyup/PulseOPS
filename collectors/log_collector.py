@@ -26,15 +26,7 @@ class LogCollector:
         now_str = time.strftime("%H:%M:%S")
         method, path, status, latency, domain = random.choice(SAMPLE_LOG_PATTERNS)
         
-        status_color = "#57a773" if status < 400 else "bold #e05353"
-        log_line = (
-            f"[#6f737a]{now_str}[/#6f737a] "
-            f"[{status_color}]{status}[/{status_color}] "
-            f"[bold #589df6]{method:<4}[/bold #589df6] "
-            f"[#dfe1e5]{path:<28}[/#dfe1e5] "
-            f"[#9da0a8]{latency:>6}[/#9da0a8] "
-            f"[#6f737a]({domain})[/#6f737a]"
-        )
+        log_line = f"{now_str} {status} {method:<4} {path:<28} {latency:>6} ({domain})"
         self.logs.append(log_line)
         return list(self.logs)
 

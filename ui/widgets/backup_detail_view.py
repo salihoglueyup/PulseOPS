@@ -1,7 +1,7 @@
 from textual.widget import Widget
 from textual.reactive import reactive
 from rich.panel import Panel
-from rich.table import Table
+from ui.safe import PlainTable as Table, escape
 from rich.text import Text
 
 from models.backup import BackupData, BackupStatus
@@ -33,7 +33,7 @@ class BackupDetailView(Widget):
         # Deploy SHA card info
         active_sha = deploy.last_deploy_sha or "Tespit Edilemedi"
         prev_sha = deploy.prev_deploy_sha or "Yok"
-        deploy_str = f"Aktif: [bold #f0f6fc]{active_sha}[/bold #f0f6fc] | Geri Alma: [bold #c9d1d9]{prev_sha}[/bold #c9d1d9]"
+        deploy_str = f"Aktif: [bold #f0f6fc]{escape(active_sha)}[/bold #f0f6fc] | Geri Alma: [bold #c9d1d9]{escape(prev_sha)}[/bold #c9d1d9]"
 
         # Retention badge
         ret_style = "bold #3fb950" if "SAĞLIKLI" in retention.retention_status else "bold #d29922"

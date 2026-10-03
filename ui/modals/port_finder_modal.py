@@ -5,7 +5,7 @@ from textual.widgets import Static, Button, Input, Label
 from textual.binding import Binding
 from rich.panel import Panel
 from rich.text import Text
-from rich.table import Table
+from ui.safe import PlainTable as Table
 
 from models.ports import ListeningPort
 from collectors.port_finder import find_available_ports

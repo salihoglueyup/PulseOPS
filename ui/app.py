@@ -176,6 +176,10 @@ class ServerTUIApp(App):
                 yield self.storage_panel
         yield Footer()
 
+    def notify(self, message, *, markup: bool = False, **kwargs):
+        # Messages often embed telemetry (domains, user names, paths); never parse them as markup
+        return super().notify(message, markup=markup, **kwargs)
+
     def get_line_filters(self):
         filters = list(super().get_line_filters())
         if self._ascii_filter is not None:

@@ -2,7 +2,7 @@ from collections import deque
 from textual.widget import Widget
 from textual.reactive import reactive
 from rich.panel import Panel
-from rich.table import Table
+from ui.safe import PlainTable as Table
 from rich.text import Text
 
 from models.system import SystemSnapshot
