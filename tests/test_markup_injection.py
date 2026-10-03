@@ -144,3 +144,34 @@ def test_cli_status_and_report_are_safe(payload, tmp_path):
     md = generate_audit_markdown(t.snapshot, t.ports, t.routes, t.backups, t.containers,
                                  databases=t.databases, services=t.services, security=t.security, storage=t.storage)
     assert md
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", PAYLOADS)
+async def test_history_views_are_safe(payload, tmp_path, monkeypatch, capsys):
+    import cli
+    from history import HistoryStore, host_key
+    from ui.modals.history_modal import HistoryModal
+
+    store = HistoryStore(tmp_path / "h.db")
+    t = HostileCollector(payload).collect()
+    t.snapshot.hostname = "web" + payload
+    store.record_sample(t, 50, 1)
+    store.detect_changes(t)
+    evil = t.model_copy(deep=True)
+    evil.security.access.login_users = ["root", "user" + payload]
+    evil.security.access.uid0_users = ["root"]
+    t.security.access.login_users = ["root"]
+    t.security.access.uid0_users = ["root"]
+    store.detect_changes(t)
+    assert store.detect_changes(evil)
+
+    modal = HistoryModal(store, host_key(t), t.snapshot.hostname)
+    assert_no_injected_links(modal._build_content())
+    plain = "".join(seg.text for seg in Console(width=200, file=open("/dev/null", "w")).render(modal._build_content()))
+    assert "user" + payload in plain
+
+    monkeypatch.setattr("history.default_history_path", lambda: tmp_path / "h.db")
+    with pytest.raises(SystemExit):
+        cli.main(["history", host_key(t)[:8]])
+    assert "user" + payload in capsys.readouterr().out

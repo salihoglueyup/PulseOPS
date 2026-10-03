@@ -52,6 +52,12 @@ jobs:
           # Demo data scores 65/100, so `check` must exit with WARNING (1)
           set +e; ./dist/pulseops-linux-amd64 check --demo; code=$?; set -e
           test "$code" -eq 1
+          # Live probe inside the old-glibc container + history database (bundled sqlite3)
+          export HOME="$(mktemp -d)"
+          set +e; ./dist/pulseops-linux-amd64 check; code=$?; set -e
+          test "$code" -le 2
+          ./dist/pulseops-linux-amd64 history | tee /tmp/history.txt
+          grep -q "örnek" /tmp/history.txt
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4

@@ -69,6 +69,7 @@ class ProbeCollector(BaseCollector):
         self._inode_owner: dict[str, int] = {}
         self._proc_users: dict[int, str] = {}
         self._slow_sections: dict[str, str] = {}
+        self._machine_id = ""
         self._rare_sections: dict[str, str] = {}
         self._rare_collected_at = 0.0
         self._slow_collected_at = 0.0
@@ -141,6 +142,7 @@ class ProbeCollector(BaseCollector):
             storage=storage,
             privileges=self._privileges,
             logs=self._logs,
+            machine_id=self._machine_id,
             collected_at=now,
             slow_collected_at=self._slow_collected_at,
         )
@@ -260,6 +262,8 @@ class ProbeCollector(BaseCollector):
         self._slow_collected_at = now
 
         self._host = pp.parse_host(s.get("HOST", ""))
+        mid = s.get("MACHINE_ID", "").strip().splitlines()
+        self._machine_id = mid[0].strip() if mid and len(mid[0].strip()) >= 16 else ""
         self._cores, self._clk, self._page_size = pp.parse_sysconf(s.get("SYSCONF", ""))
         self._disks = pp.parse_df(s.get("DISK", ""))
         self._proc_users = pp.parse_procusers(s.get("PROCUSERS", ""))

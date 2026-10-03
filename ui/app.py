@@ -83,6 +83,7 @@ class ServerTUIApp(App):
         Binding("t", "toggle_theme", "Tema (t)", show=True),
         Binding("slash", "toggle_search", "Ara (/)", show=True),
         Binding("e", "export_report", "Rapor (e)", show=True),
+        Binding("h", "show_history", "Geçmiş (h)", show=True),
         Binding("r", "refresh_data", "Yenile (r)", show=True),
         Binding("q", "quit", "Çıkış (q)", show=True),
         Binding("ctrl+c", "quit", "Çıkış (Ctrl+C)", show=False, priority=True),
@@ -107,10 +108,15 @@ class ServerTUIApp(App):
         slow_interval: float = 30.0,
         ascii_mode: bool = False,
         alert_thresholds: Optional[AlertConfig] = None,
+        history=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.alert_thresholds = alert_thresholds
+        # Optional HistoryStore: per-minute samples + drift detection on every slow poll
+        self.history = history
+        self._last_sample_at = 0.0
+        self._announced_offline_changes = False
         self.collector = collector
         self.poll_interval = poll_interval
         self.slow_interval = max(slow_interval, poll_interval)
@@ -387,11 +393,46 @@ class ServerTUIApp(App):
         except Exception as e:
             log.exception("Telemetri toplanamadı")
             self.call_from_thread(self._on_poll_failed, e)
-        else:
-            self.call_from_thread(self._on_poll_done, telemetry, include_slow)
+            return
+        changes, offline = self._record_history(telemetry, include_slow)
+        self.call_from_thread(self._on_poll_done, telemetry, include_slow, changes, offline)
 
-    def _on_poll_done(self, telemetry: Telemetry, include_slow: bool) -> None:
+    def _record_history(self, t: Telemetry, include_slow: bool):
+        """Runs in the poll thread. Returns (new changes, changes recorded while the TUI was closed)."""
+        if self.history is None:
+            return [], []
+        from history import host_key
+        changes, offline = [], []
+        try:
+            if not self._announced_offline_changes:
+                offline = [c for c in self.history.take_unreported(host_key(t), "tui") if c.severity != "INFO"]
+            if include_slow:
+                changes = self.history.detect_changes(t)
+                self.history.take_unreported(host_key(t), "tui")  # what we show live is not "offline"
+            if t.collected_at - self._last_sample_at >= 60:
+                score, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
+                self.history.record_sample(t, score, len(summarize_alerts(t, self.alert_thresholds)))
+                self._last_sample_at = t.collected_at
+        except Exception:
+            log.exception("Geçmiş kaydedilemedi")
+        return changes, offline
+
+    def _on_poll_done(self, telemetry: Telemetry, include_slow: bool, changes=(), offline=()) -> None:
         self._poll_in_flight = False
+        if not self._announced_offline_changes and self.history is not None:
+            self._announced_offline_changes = True
+            if offline:
+                self.notify(
+                    "\n".join(f"• {c.message}" for c in offline[:5]) + ("\n…" if len(offline) > 5 else "")
+                    + "\n\nAyrıntılar için: h",
+                    title=f"Son açılıştan beri {len(offline)} güvenlik değişikliği",
+                    severity="warning",
+                    timeout=15.0,
+                )
+        for change in changes:
+            if change.severity != "INFO":
+                self.notify(change.message, title="⚠ Güvenlik değişikliği (h)",
+                            severity="error" if change.severity == "HIGH" else "warning", timeout=15.0)
         if include_slow:
             self._last_slow_poll = time.monotonic()
         if self._failures:
@@ -474,6 +515,17 @@ class ServerTUIApp(App):
             1 for r in t.routes if r.is_ssl and r.ssl_days_left is not None and r.ssl_days_left <= 7
         )
         self.dashboard_status_bar.alerts_count = len(alerts)
+
+    def action_show_history(self) -> None:
+        if self.history is None:
+            self.notify("Geçmiş kapalı (demo modu veya [history] enabled = false).", timeout=3.0)
+            return
+        if not self.telemetry:
+            self.notify("Veriler henüz yüklenmedi.", timeout=2.0)
+            return
+        from history import host_key
+        from ui.modals.history_modal import HistoryModal
+        self.push_screen(HistoryModal(self.history, host_key(self.telemetry), self.telemetry.snapshot.hostname))
 
     def on_unmount(self) -> None:
         try:

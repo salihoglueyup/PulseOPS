@@ -115,6 +115,7 @@ pulseops report                 # Markdown denetim raporu -> audit-reports/
 pulseops report -f json -o -    # JSON raporu stdout'a
 pulseops check                  # sağlık skoruna göre çıkış kodu
 pulseops probe                  # sunucuda çalışacak salt-okunur betiği göster (denetim için)
+pulseops history [--since 7d]   # kayıtlı trendler ve güvenlik değişiklikleri (bağlantı kurmaz)
 ```
 
 `pulseops check` Nagios/Icinga eklenti formatında tek satır ve performans verisi yazar. Çıkış kodları: `0` OK, `1` WARNING (skor < `--warn`, varsayılan 80), `2` CRITICAL (skor < `--crit`, varsayılan 50), `3` UNKNOWN (veri toplanamadı).
@@ -127,7 +128,31 @@ pulseops probe                  # sunucuda çalışacak salt-okunur betiği gös
 > **İpucu:** Tüm komutlar uzak sunucu için de çalışır: `pulseops check root@sunucu --key ~/.ssh/id_ed25519`
 
 
-### 5. Yapılandırma
+### 5. Değişiklik Tespiti & Geçmiş
+
+PulseOps her yavaş turda sunucunun güvenlik durumunu bir öncekiyle karşılaştırır ve değişiklikleri
+`~/.local/share/pulseops/history.db` dosyasına (0600) kaydeder:
+
+- yeni **dışa açık port** (hangi süreç), yeni **UID 0** hesap, **sudo/wheel**'e eklenen kullanıcı,
+  `authorized_keys`'e eklenen **SSH anahtarı**, yeni `NOPASSWD` kuralı, **kapatılan güvenlik duvarı**,
+  zayıflayan `sshd` ayarı, duran fail2ban, çöken servis, yeni konteyner
+
+TUI'de yüksek önemli değişiklikler anında bildirilir; `h` tuşu 24 saatlik CPU/RAM/disk/skor trendlerini ve
+7 günlük değişiklik akışını gösterir. Okunamayan veriler (ör. root olmadan sudoers) karşılaştırılmaz, böylece
+yetki farkı sahte alarm üretmez.
+
+Ajansız olduğu için geçmiş PulseOps çalıştıkça birikir. Sürekli gözlem için tek bir cron satırı yeterli
+(arka planda servis kurulmaz):
+
+```bash
+# her 5 dakikada bir: metrik kaydı + değişiklik tespiti; yeni bir değişiklikte çıkış kodu WARNING olur
+*/5 * * * * /usr/local/bin/pulseops check >> /var/log/pulseops-check.log 2>&1
+```
+
+`pulseops check`, kim tespit etmiş olursa olsun (TUI, `status`, önceki `check`) **son `check`'ten beri**
+oluşan değişiklikleri bir kez raporlar.
+
+### 6. Yapılandırma
 
 ```bash
 pulseops config           # geçerli ayarlar ve okunan dosyalar
@@ -146,6 +171,10 @@ use_sudo = true       # root değilken yavaş kontrollerde parolasız `sudo -n`
 warn = 80
 crit = 50
 
+[history]
+enabled = true        # trend + değişiklik tespiti
+drift_exit = "warning"  # check: yüksek önemli yeni değişiklikte en az bu çıkış kodu (none | warning | critical)
+
 [alerts]              # uyarı eşikleri
 disk_percent = 80
 memory_percent = 85
@@ -156,7 +185,7 @@ Sorun giderme için log dosyası: `~/.cache/pulseops/pulseops.log`.
 
 Güvenlik ekipleri için ayrıntılı model (çalıştırılan komutlar, sudo, SSH, yazılan dosyalar): [docs/SECURITY.md](docs/SECURITY.md).
 
-### 6. Nasıl Çalışır?
+### 7. Nasıl Çalışır?
 
 Yerel modda da SSH modunda da hedef makinede aynı salt-okunur shell betiği (`sh -s`) çalışır ve çıktısı aynı kodla ayrıştırılır. Ucuz ve sık değişen metrikler (CPU, RAM, ağ, portlar, süreçler) her 2 saniyede, `systemctl`, `docker`, `nginx -T` gibi ağır kontroller 30 saniyede bir toplanır; veri toplama ayrı bir thread'de yürür, arayüz hiç beklemez. 4 çekirdekli bir sunucuda canlı modun kendi tükettiği CPU tek çekirdeğin yaklaşık %2'si kadardır (`--interval 5` ile ~%1.3).
 
@@ -194,6 +223,7 @@ PulseOps klavyedeki `1` - `0` tuşlarıyla geçiş yapılabilen 10 derinlemesine
 | **`f`** | **Akıllı Boş Port Bulucu:** Yeni bir backend/Docker konteyneri açmadan önce boş port aralıklarını listeler. |
 | **`c`** | **Konfigürasyon İnceleyici:** Nginx, Docker veya SSH ayar dosyalarını sözdizimi renklendirmesiyle açar. |
 | **`a`** | **Akıllı Risk & Uyarı Paneli:** Sunucudaki açık riskleri (açık portlar, süresi biten SSL, şişmiş cache) listeler. |
+| **`h`** | **Geçmiş & Değişiklikler:** 24 saatlik trendler ve 7 günlük güvenlik değişikliği akışı. |
 | **`e`** | **Yönetici Denetim Raporu Al:** Tek tuşla tam kapsamlı Markdown röntgen raporu üretir (`audit-reports/`). |
 | **`/`** | **Canlı Filtreleme & Arama:** Web siteleri ve port tablolarında anında arama yapar. |
 | **`t`** | **Tema Değiştir:** Kurumsal koyu temalar arasında geçiş yapar. |

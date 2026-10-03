@@ -1,0 +1,157 @@
+"""Security drift detection: what changed on the host since the previous observation.
+
+A fingerprint maps each category to a sorted list of items, or None when that category could not be
+read this time (e.g. sudoers without root). Categories are only compared when both sides were
+readable, so a permission change never shows up as "everything was removed".
+"""
+from typing import Optional
+
+from pydantic import BaseModel
+
+from models.ports import PortExposure
+from models.services import ServiceState
+from models.telemetry import Telemetry
+
+# Loopback services in the kernel's ephemeral range are usually short-lived helper sockets
+EPHEMERAL_PORTS = range(32768, 61000)
+
+HIGH, MEDIUM, INFO = "HIGH", "MEDIUM", "INFO"
+
+
+class Change(BaseModel):
+    category: str
+    severity: str
+    message: str
+
+
+Fingerprint = dict[str, Optional[list[str]]]
+
+
+def _is_loopback(ip: str) -> bool:
+    return ip.startswith("127.") or ip in ("::1", "localhost")
+
+
+def fingerprint(t: Telemetry) -> Fingerprint:
+    sec = t.security
+    access = sec.access
+    fp: Fingerprint = {}
+
+    public, local = [], []
+    for p in t.ports:
+        if p.exposure == PortExposure.SYSTEM_RPC:
+            continue
+        item = f"{p.proto} {p.ip}:{p.port} ({p.process_name or '?'})"
+        if _is_loopback(p.ip):
+            if p.port not in EPHEMERAL_PORTS:
+                local.append(item)
+        else:
+            public.append(item)
+    fp["ports_public"] = sorted(set(public))
+    fp["ports_local"] = sorted(set(local))
+
+    fp["login_users"] = sorted(access.login_users) if access.login_users else None
+    fp["uid0_users"] = sorted(access.uid0_users) if access.uid0_users else None
+    fp["admin_users"] = sorted(access.admin_users) if access.login_users else None
+    fp["nopasswd_rules"] = sorted(access.nopasswd_rules) if access.sudoers_known else None
+    fp["authorized_keys"] = (
+        sorted(f"{user}={count}" for user, count in access.authorized_keys.items()) if access.keys_known else None
+    )
+    fp["firewall"] = [("active" if sec.firewall_active else "inactive")] if sec.firewall_known else None
+    if sec.ssh.permit_root_login in ("?", "KAPALI"):
+        fp["sshd"] = None
+    else:
+        fp["sshd"] = [f"PermitRootLogin={sec.ssh.permit_root_login}",
+                      f"PasswordAuthentication={sec.ssh.password_authentication}"]
+    fp["failed_services"] = sorted(s.name for s in t.services if s.state == ServiceState.FAILED)
+    fp["fail2ban"] = (
+        None if not sec.fail2ban.installed or not sec.fail2ban.known
+        else [("running" if sec.fail2ban.running is not False else "stopped")]
+    )
+    fp["containers"] = sorted(f"{c.name} ({c.image})" for c in t.containers)
+    return fp
+
+
+def _added_removed(old: list[str], new: list[str]) -> tuple[list[str], list[str]]:
+    return sorted(set(new) - set(old)), sorted(set(old) - set(new))
+
+
+def diff(old: Fingerprint, new: Fingerprint) -> list[Change]:
+    changes: list[Change] = []
+
+    def both(key: str) -> bool:
+        return old.get(key) is not None and new.get(key) is not None
+
+    def add(category: str, severity: str, message: str) -> None:
+        changes.append(Change(category=category, severity=severity, message=message))
+
+    if both("ports_public"):
+        added, removed = _added_removed(old["ports_public"], new["ports_public"])
+        for item in added:
+            add("port", HIGH, f"Yeni dışa açık port: {item}")
+        for item in removed:
+            add("port", INFO, f"Dışa açık port kapandı: {item}")
+    if both("ports_local"):
+        added, removed = _added_removed(old["ports_local"], new["ports_local"])
+        for item in added:
+            add("port", INFO, f"Yeni yerel port: {item}")
+
+    if both("uid0_users"):
+        added, _ = _added_removed(old["uid0_users"], new["uid0_users"])
+        for user in added:
+            add("account", HIGH, f"Yeni UID 0 (root yetkili) hesap: {user}")
+    if both("login_users"):
+        added, removed = _added_removed(old["login_users"], new["login_users"])
+        for user in added:
+            add("account", MEDIUM, f"Yeni giriş yapabilen hesap: {user}")
+        for user in removed:
+            add("account", INFO, f"Hesap kaldırıldı / girişi kapatıldı: {user}")
+    if both("admin_users"):
+        added, removed = _added_removed(old["admin_users"], new["admin_users"])
+        for user in added:
+            add("account", HIGH, f"sudo/wheel grubuna eklendi: {user}")
+        for user in removed:
+            add("account", INFO, f"sudo/wheel grubundan çıkarıldı: {user}")
+    if both("nopasswd_rules"):
+        added, removed = _added_removed(old["nopasswd_rules"], new["nopasswd_rules"])
+        for rule in added:
+            add("sudo", HIGH, f"Yeni NOPASSWD sudo kuralı: {rule}")
+        for rule in removed:
+            add("sudo", INFO, f"NOPASSWD sudo kuralı kaldırıldı: {rule}")
+    if both("authorized_keys"):
+        before = dict(item.split("=", 1) for item in old["authorized_keys"])
+        after = dict(item.split("=", 1) for item in new["authorized_keys"])
+        for user in sorted(set(before) | set(after)):
+            b, a = int(before.get(user, 0)), int(after.get(user, 0))
+            if a > b:
+                add("ssh_key", HIGH, f"{user} hesabına {a - b} yeni SSH anahtarı eklendi ({b} → {a})")
+            elif a < b:
+                add("ssh_key", INFO, f"{user} hesabından {b - a} SSH anahtarı kaldırıldı ({b} → {a})")
+
+    if both("firewall") and old["firewall"] != new["firewall"]:
+        if new["firewall"] == ["inactive"]:
+            add("firewall", HIGH, "Güvenlik duvarı KAPATILDI")
+        else:
+            add("firewall", INFO, "Güvenlik duvarı açıldı")
+    if both("sshd"):
+        for before, after in zip(old["sshd"], new["sshd"]):
+            if before != after:
+                weaker = after.endswith("=yes")
+                add("sshd", HIGH if weaker else INFO, f"sshd ayarı değişti: {before} → {after.split('=', 1)[1]}")
+    if both("fail2ban") and old["fail2ban"] != new["fail2ban"]:
+        add("fail2ban", HIGH if new["fail2ban"] == ["stopped"] else INFO,
+            "fail2ban DURDU" if new["fail2ban"] == ["stopped"] else "fail2ban yeniden çalışıyor")
+    if both("failed_services"):
+        added, removed = _added_removed(old["failed_services"], new["failed_services"])
+        for name in added:
+            add("service", MEDIUM, f"Servis çöktü: {name}")
+        for name in removed:
+            add("service", INFO, f"Servis düzeldi: {name}")
+    if both("containers"):
+        added, removed = _added_removed(old["containers"], new["containers"])
+        for item in added:
+            add("container", INFO, f"Yeni konteyner: {item}")
+        for item in removed:
+            add("container", INFO, f"Konteyner kaldırıldı: {item}")
+
+    order = {HIGH: 0, MEDIUM: 1, INFO: 2}
+    return sorted(changes, key=lambda c: order[c.severity])

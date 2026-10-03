@@ -89,7 +89,15 @@ def main(argv=None):
 
     from ui.app import ServerTUIApp
 
+    from collectors.base import DemoCollector
+
+    history = None
+    if config.history.enabled and not isinstance(collector, DemoCollector):
+        from history import HistoryStore
+        history = HistoryStore()
+
     app = ServerTUIApp(
+        history=history,
         collector=collector,
         poll_interval=interval,
         slow_interval=slow_interval,

@@ -12,11 +12,12 @@ from rich.markup import escape
 
 from ui.safe import PlainTable
 
-from collectors.base import BaseCollector, DemoCollector, create_local_collector
+from collectors.base import BaseCollector, DemoCollector, create_local_collector, read_machine_id
 from collectors.telemetry import collect_telemetry, summarize_alerts
 from collectors.audit_exporter import calculate_audit_score, generate_audit_markdown
 from models.telemetry import Telemetry
 from models.services import ServiceState
+from logging_setup import get_logger
 from pulseops_config import Config, ConfigError, init_user_config, render_config, user_config_path, SYSTEM_CONFIG
 
 # Nagios / monitoring plugin compatible exit codes
@@ -236,13 +237,62 @@ def render_status(t: Telemetry, console: Console, config: Optional[Config] = Non
         console.print("[bold green]Aktif uyarı yok.[/bold green]")
 
 
+def _history_store(args: argparse.Namespace):
+    """The local history store, or None (disabled in config, or demo data that must not pollute it)."""
+    if args.demo or not _config(args).history.enabled:
+        return None
+    from history import HistoryStore
+    return HistoryStore()
+
+
+def _record_history(store, t: Telemetry, config: Config) -> list:
+    """Stores a metric sample and runs drift detection. History problems never fail a command."""
+    if store is None:
+        return []
+    try:
+        score, _ = _score(t)
+        store.record_sample(t, score, len(summarize_alerts(t, config.alerts)))
+        return store.detect_changes(t)
+    except Exception:
+        get_logger("history").exception("Geçmiş kaydedilemedi")
+        return []
+
+
+def _recent_changes(store, t: Telemetry, hours: int = 24) -> list:
+    if store is None:
+        return []
+    import time
+    from history import host_key
+    try:
+        return store.changes(host_key(t), since=time.time() - hours * 3600, limit=20)
+    except Exception:
+        get_logger("history").exception("Geçmiş okunamadı")
+        return []
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     t = _collect_or_exit(build_collector(args))
+    store = _history_store(args)
+    _record_history(store, t, _config(args))
+    recent = _recent_changes(store, t)
     if args.json:
-        print(json.dumps(_telemetry_json(t, _config(args)), ensure_ascii=False, indent=2))
+        data = _telemetry_json(t, _config(args))
+        data["recent_changes"] = [c.model_dump() for c in recent]
+        print(json.dumps(data, ensure_ascii=False, indent=2))
     else:
-        render_status(t, Console(), _config(args))
+        console = Console()
+        render_status(t, console, _config(args))
+        if recent:
+            console.print()
+            console.print(f"[bold]Son 24 saatteki değişiklikler ({len(recent)}):[/bold]")
+            for c in recent:
+                console.print(f"  {_fmt_time(c.ts)}  [{c.severity}] {c.message}", markup=False)
     return EXIT_OK
+
+
+def _fmt_time(ts: float) -> str:
+    import time
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -289,11 +339,94 @@ def cmd_check(args: argparse.Namespace) -> int:
     score, grade = _score(t)
     alerts = summarize_alerts(t, config.alerts)
     code = evaluate_check(score, args.warn, args.crit)
+
+    # Security drift since the previous `check` (whoever detected it: TUI, status or check)
+    store = _history_store(args)
+    _record_history(store, t, config)
+    new_changes = []
+    if store is not None:
+        from history import host_key
+        try:
+            new_changes = [c for c in store.take_unreported(host_key(t), "check") if c.severity != "INFO"]
+        except Exception:
+            get_logger("history").exception("Değişiklikler okunamadı")
+    if any(c.severity == "HIGH" for c in new_changes) and config.history.drift_exit != "none":
+        code = max(code, EXIT_CRITICAL if config.history.drift_exit == "critical" else EXIT_WARNING)
+
     label = {EXIT_OK: "OK", EXIT_WARNING: "WARNING", EXIT_CRITICAL: "CRITICAL"}[code]
     summary = f"; {'; '.join(alerts)}" if alerts else ""
+    if new_changes:
+        summary += "; DEĞİŞİKLİK: " + "; ".join(c.message for c in new_changes)
     # Single line + perfdata, the format monitoring systems (Nagios, Icinga, Zabbix) expect
-    print(f"PULSEOPS {label} - {t.snapshot.hostname} skor {score}/100 {grade}{summary} | score={score};{args.warn};{args.crit};0;100 alerts={len(alerts)}")
+    print(f"PULSEOPS {label} - {t.snapshot.hostname} skor {score}/100 {grade}{summary}"
+          f" | score={score};{args.warn};{args.crit};0;100 alerts={len(alerts)} changes={len(new_changes)}")
     return code
+
+
+def _parse_since(value: str) -> float:
+    import re
+    import time
+    m = re.fullmatch(r"(\d+)\s*([hdw])", value.strip().lower())
+    if not m:
+        raise argparse.ArgumentTypeError("süre biçimi: 6h, 24h, 7d, 2w")
+    return time.time() - int(m.group(1)) * {"h": 3600, "d": 86400, "w": 604800}[m.group(2)]
+
+
+def cmd_history(args: argparse.Namespace) -> int:
+    """Shows stored trends and security changes without connecting to any host."""
+    from history import HistoryStore
+    from ui.widgets.sparkline import render_sparkline
+
+    store = HistoryStore()
+    hosts = store.hosts() if store.path.exists() else []
+    if not hosts:
+        print("Henüz geçmiş yok. `pulseops`, `pulseops status` veya cron ile `pulseops check` çalıştırıldıkça birikir.")
+        return EXIT_OK
+    if args.host:
+        wanted = args.host.lower()
+        matches = [h for h in hosts if h[1].lower() == wanted or h[0].startswith(wanted)]
+    else:
+        local_id = read_machine_id()
+        matches = [h for h in hosts if h[0] == local_id] or hosts[:1]
+    if len(matches) != 1:
+        print("Sunucu belirsiz veya bulunamadı. Kayıtlı sunucular:")
+        for host_id, name, last in hosts:
+            print(f"  {name:30s} {host_id[:12]}  son görülme {_fmt_time(last)}")
+        return EXIT_UNKNOWN
+    host_id, hostname, last_seen = matches[0]
+    since = args.since
+    samples = store.samples(host_id, since)
+    changes = store.changes(host_id, since=since, limit=500)
+
+    if args.json:
+        print(json.dumps({"host_id": host_id, "hostname": hostname, "samples": [x.model_dump() for x in samples],
+                          "changes": [c.model_dump() for c in changes]}, ensure_ascii=False, indent=2))
+        return EXIT_OK
+
+    console = Console()
+    console.print(f"[bold]⚡ {escape(hostname)}[/bold]  ({host_id[:12]})  ·  son görülme {_fmt_time(last_seen)}")
+    if samples:
+        table = PlainTable(box=None, pad_edge=False, header_style="bold")
+        for col in ("Metrik", "Trend", "Min", "Ort", "Maks", "Son"):
+            table.add_column(col, justify="left" if col in ("Metrik", "Trend") else "right")
+        for label, attr, top in (("CPU %", "cpu", 100), ("RAM %", "mem", 100), ("Disk / %", "disk_root", 100),
+                                 ("Load", "load1", None), ("Skor", "score", 100), ("Uyarı", "alerts", None)):
+            values = [float(getattr(x, attr)) for x in samples]
+            hi = top if top is not None else max(max(values), 1.0)
+            table.add_row(label, render_sparkline(values, 0.0, hi, width=40),
+                          f"{min(values):.1f}", f"{sum(values) / len(values):.1f}", f"{max(values):.1f}", f"{values[-1]:.1f}")
+        console.print(f"{len(samples)} örnek, {_fmt_time(samples[0].ts)} → {_fmt_time(samples[-1].ts)}")
+        console.print(table)
+    else:
+        console.print("Bu aralıkta metrik örneği yok.")
+    console.print()
+    if changes:
+        console.print(f"[bold]Güvenlik değişiklikleri ({len(changes)}):[/bold]")
+        for c in changes:
+            console.print(f"  {_fmt_time(c.ts)}  [{c.severity}] {c.message}", markup=False)
+    else:
+        console.print("Bu aralıkta güvenlik değişikliği yok.")
+    return EXIT_OK
 
 
 def build_subcommand_parsers() -> argparse.ArgumentParser:
@@ -325,6 +458,12 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     p_config.add_argument("--force", action="store_true", help="--init ile var olan dosyanın üzerine yazar")
     p_config.set_defaults(func=cmd_config)
 
+    p_history = sub.add_parser("history", help="Kayıtlı trendleri ve güvenlik değişikliklerini gösterir (bağlantı kurmaz)")
+    p_history.add_argument("host", nargs="?", help="Hostname veya makine kimliği öneki (varsayılan: bu makine)")
+    p_history.add_argument("--since", type=_parse_since, default="24h", help="Zaman aralığı: 6h, 24h, 7d, 2w (varsayılan: 24h)")
+    p_history.add_argument("--json", action="store_true", help="JSON çıktı")
+    p_history.set_defaults(func=cmd_history)
+
     p_probe = sub.add_parser("probe", help="Sunucuda çalıştırılan salt-okunur betiği gösterir (denetim için)")
     p_probe.add_argument("--tier", choices=["fast", "slow", "logs", "all"], default="all",
                          help="fast: her 2 sn, slow: her 30 sn, logs: Loglar sekmesi açıkken (varsayılan: all)")
@@ -337,7 +476,7 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     return parser
 
 
-SUBCOMMANDS = ("status", "report", "check", "config", "probe", "update", "uninstall", "version")
+SUBCOMMANDS = ("status", "report", "check", "history", "config", "probe", "update", "uninstall", "version")
 
 
 def cmd_probe(args: argparse.Namespace) -> int:

@@ -55,8 +55,16 @@ class SSHConfig(_Section):
     )
 
 
+class HistoryConfig(_Section):
+    enabled: bool = Field(True, description="Metrik geçmişi ve güvenlik değişikliği tespiti (~/.local/share/pulseops/history.db)")
+    drift_exit: Literal["none", "warning", "critical"] = Field(
+        "warning", description="`pulseops check`: yüksek önemli yeni değişiklikte en az bu çıkış kodu",
+    )
+
+
 class Config(_Section):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
+    history: HistoryConfig = Field(default_factory=HistoryConfig)
     ssh: SSHConfig = Field(default_factory=SSHConfig)
     check: CheckConfig = Field(default_factory=CheckConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)

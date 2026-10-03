@@ -123,6 +123,12 @@ Bu fazda bulunan ve düzeltilen hatalar:
 
 ## Faz 5 — Ürünleşme
 
-- ⬜ Çoklu sunucu: `~/.config/pulseops/hosts.toml`, TUI içinde sunucular arası geçiş
-- ⬜ Hafif geçmiş kaydı (SQLite) ve trend grafikleri
+- ✅ **v1.1.0 yayınlandı**; release workflow Actions sekmesinden sürüm girdisiyle de çalıştırılabiliyor.
+  Doğrulama: gerçek `curl | bash` kurulumu, SHA-256, `update`, `uninstall`; paketlenmiş 65 kütüphanenin
+  en yüksek glibc ihtiyacı **2.28** (eski `ubuntu-latest` derlemesi 2.38 istiyordu → Ubuntu 22.04'te çalışmazdı)
+- ✅ Güvenlik değişikliği tespiti + geçmiş (SQLite): yeni dışa açık port, UID 0 / sudo / NOPASSWD / SSH anahtarı
+  değişiklikleri, güvenlik duvarı, sshd, fail2ban, servisler, konteynerler; TUI bildirimi ve `h` modalı (trend +
+  akış), `pulseops history`, `check` entegrasyonu (son `check`'ten beri, WARNING'e yükseltme), cron ile sürekli gözlem
+- ⬜ Bildirimler: webhook, Slack, Telegram, Discord, e-posta
+- ⬜ Çoklu sunucu: `~/.ssh/config` grupları, filo görünümü, `check --all`
 - ⬜ `.deb` / `.rpm` paketleri

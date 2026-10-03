@@ -27,6 +27,8 @@ class Telemetry(BaseModel):
     storage: StorageOverview = Field(default_factory=StorageOverview)
     privileges: PrivilegeInfo = Field(default_factory=PrivilegeInfo)
     logs: list[str] = Field(default_factory=list)
+    # Stable identity of the observed machine (/etc/machine-id), shared by every way of reaching it
+    machine_id: str = ""
     # Unix timestamps of this poll and of the last refresh of the slow tier (services, docker...)
     collected_at: float = 0.0
     slow_collected_at: float = 0.0

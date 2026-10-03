@@ -111,6 +111,7 @@ SEARCH_ROOTS = "/var/backups /var/www /opt /srv /home /root ."
 
 SLOW_SECTIONS = [
     ("HOST", "show /proc/sys/kernel/hostname; show /proc/sys/kernel/osrelease; show /etc/os-release"),
+    ("MACHINE_ID", "show /etc/machine-id || show /var/lib/dbus/machine-id"),
     ("SYSCONF", "nproc || grep -c ^processor /proc/cpuinfo; getconf CLK_TCK || echo 100; getconf PAGESIZE || echo 4096"),
     ("DISK", "df -P -T -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs || df -P -T -k"),
     (

@@ -105,6 +105,12 @@ her özellik bir kez yazılır.
 * SOC bölümleri (`FAIL2BAN`, `AUTH`, `ACCESS`): sshd kayıtları hedefte `awk` ile özetlenir (sayılar + ilk 10),
   saldırı altındaki bir sunucuda bile birkaç yüz bayt aktarılır. Ayrıntılar: [SECURITY.md](SECURITY.md).
 
+* `collectors/drift.py`: Telemetriden güvenlik "parmak izi" (dışa açık portlar, hesaplar, UID 0, sudo grupları,
+  NOPASSWD, authorized_keys, güvenlik duvarı, sshd, fail2ban, çöken servisler, konteynerler) ve iki parmak izi
+  arasındaki farkı önem derecesiyle (HIGH/MEDIUM/INFO) çıkarır. Okunamayan kategori `None`'dır ve karşılaştırılmaz.
+* `history.py` (`HistoryStore`): SQLite; makine kimliği (`/etc/machine-id`) başına metrik örnekleri, son parmak izi
+  (baseline) ve değişiklik kayıtları. Her tüketicinin (`check`, `tui`) kendi "son okuma" imleci vardır.
+
 ### A2. Komut Satırı Katmanı
 * `cli.py`: TUI argümanları (`--interval`, `--slow-interval`, `--no-color`, `--ascii`, `--no-mouse`), yapılandırma yükleme ve alt komut yönlendirmesi.
 * `pulseops_config.py`: `/etc/pulseops/config.toml` ve `~/.config/pulseops/config.toml` (Pydantic ile doğrulanır; bilinmeyen anahtar hatadır).

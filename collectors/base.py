@@ -13,6 +13,19 @@ from collectors.backup_collector import BackupCollector
 from collectors.docker_collector import DockerCollector
 from collectors.mock_collector import MockCollector
 
+def read_machine_id() -> str:
+    """This machine's systemd/dbus machine id, the identity used for local history."""
+    for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+        try:
+            with open(path, encoding="ascii") as f:
+                value = f.read().strip()
+            if len(value) >= 16:
+                return value
+        except OSError:
+            continue
+    return ""
+
+
 class BaseCollector(ABC):
     """Abstract collector. `collect()` is the single entry point used by the TUI and the CLI.
 
@@ -48,9 +61,13 @@ class BaseCollector(ABC):
             routes=routes,
             containers=containers,
             logs=self._last_logs,
+            machine_id=self.machine_id(),
             collected_at=now,
             **cache,
         )
+
+    def machine_id(self) -> str:
+        return read_machine_id()
 
     def poll(self) -> Tuple[SystemSnapshot, list[ListeningPort], list[ProxyRoute], list[BackupTask], list[ContainerSummary]]:
         raise NotImplementedError
@@ -162,6 +179,9 @@ class DemoCollector(BaseCollector):
 
     def poll_logs(self) -> list[str]:
         return self._log_collector.poll_mock()
+
+    def machine_id(self) -> str:
+        return "demo-0000000000000000"
 
     def poll(self) -> Tuple[SystemSnapshot, list[ListeningPort], list[ProxyRoute], list[BackupTask], list[ContainerSummary]]:
         snapshot = self.mock.get_snapshot()
