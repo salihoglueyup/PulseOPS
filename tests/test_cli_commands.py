@@ -179,3 +179,13 @@ def test_update_binary_already_latest(tmp_path, monkeypatch, capsys):
     assert installer._update_binary(exe, force=False) == 0
     assert exe.read_bytes() == b"old"
     assert "Zaten güncel" in capsys.readouterr().out
+
+
+def test_package_install_is_left_to_the_package_manager(monkeypatch, capsys):
+    import installer
+
+    assert installer.detect_install_mode(frozen=True, executable="/usr/bin/pulseops") == "package"
+    assert installer.detect_install_mode(frozen=True, executable="/usr/local/bin/pulseops") == "binary"
+    monkeypatch.setattr(installer, "detect_install_mode", lambda: "package")
+    assert installer.cmd_update(None) == 1 and "apt install ./pulseops_" in capsys.readouterr().err
+    assert installer.cmd_uninstall(None) == 1 and "sudo apt remove pulseops" in capsys.readouterr().err

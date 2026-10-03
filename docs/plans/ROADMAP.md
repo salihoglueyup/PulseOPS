@@ -135,4 +135,6 @@ Bu fazda bulunan ve düzeltilen hatalar:
   `check --all/--group` (paralel, en kötü durum çıkış kodu, erişilemeyen sunucu bildirimi)
   - Bulunan hata: aynı makine root ve normal kullanıcıyla izlendiğinde değişiklik tespiti sahte alarm
     üretiyordu (port sahibi adı ve okunamayan `authorized_keys`); düzeltildi, regresyon testleri eklendi
-- ⬜ `.deb` / `.rpm` paketleri
+- ✅ `.deb` / `.rpm` paketleri (nfpm v2.43.0, `/usr/bin/pulseops`, yalnızca `glibc >= 2.28` bağımlılığı,
+  örnek yapılandırma ve belgeler `/usr/share/doc/pulseops/`); release'de `.deb` gerçekten `apt` ile kurulup
+  test ediliyor; paketle kurulumda `update`/`uninstall` paket yöneticisine yönlendiriyor

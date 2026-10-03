@@ -58,6 +58,16 @@ curl -fsSL https://raw.githubusercontent.com/salihoglueyup/PulseOPS/main/install
 
 Installer önce hazır binary'yi indirir (Python gerekmez; x86_64, glibc 2.28+ yani Ubuntu 20.04+, Debian 10+, RHEL 8+) ve SHA-256 ile doğrular. Binary yoksa veya çalışmazsa Python 3.10+ ile izole bir ortama kaynak koddan kurar. `root` olarak çalıştırılırsa `/usr/local/bin`, değilse `~/.local/bin` altına kurar.
 
+Paket yöneticisiyle kurmak isterseniz [Releases](https://github.com/salihoglueyup/PulseOPS/releases/latest)
+sayfasındaki paketleri kullanın (yalnızca glibc 2.28+ gerekir):
+
+```bash
+sudo apt install ./pulseops_<sürüm>_amd64.deb            # Debian / Ubuntu
+sudo dnf install ./pulseops-<sürüm>-1.x86_64.rpm         # RHEL / Alma / Rocky / Fedora
+```
+
+Paketle kurulduğunda güncelleme ve kaldırma paket yöneticisiyle yapılır; `install.sh` ile kurulduğunda:
+
 ```bash
 pulseops update       # en son sürüme güncelle
 pulseops uninstall    # kaldır

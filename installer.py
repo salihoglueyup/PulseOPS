@@ -27,15 +27,20 @@ LINK_DIRS = (Path("/usr/local/bin"), Path.home() / ".local" / "bin")
 LINK_NAMES = ("pulseops", "pulsetui")
 
 
+PACKAGE_BINARY = Path("/usr/bin/pulseops")  # where the .deb/.rpm installs it (install.sh never does)
+
+
 def detect_install_mode(
     frozen: Optional[bool] = None,
     prefix: Optional[str] = None,
     venv_dir: Path = VENV_INSTALL_DIR,
+    executable: Optional[str] = None,
 ) -> str:
-    """Returns 'binary', 'venv', 'pipx' or 'source'."""
+    """Returns 'package', 'binary', 'venv', 'pipx' or 'source'."""
     frozen = getattr(sys, "frozen", False) if frozen is None else frozen
     if frozen:
-        return "binary"
+        exe = Path(executable or sys.executable).resolve()
+        return "package" if exe == PACKAGE_BINARY else "binary"
     prefix_path = Path(sys.prefix if prefix is None else prefix).resolve()
     if prefix_path == (venv_dir / "venv").resolve():
         return "venv"
@@ -150,8 +155,21 @@ def cmd_version(args: argparse.Namespace) -> int:
     return 0
 
 
+PACKAGE_UPDATE_HINT = """PulseOps paket yöneticisiyle kurulmuş; güncellemek için yeni paketi indirip kurun:
+  Debian/Ubuntu:    sudo apt install ./pulseops_<sürüm>_amd64.deb
+  RHEL/Alma/Fedora: sudo dnf install ./pulseops-<sürüm>-1.x86_64.rpm"""
+
+PACKAGE_REMOVE_HINT = """PulseOps paket yöneticisiyle kurulmuş; kaldırmak için:
+  Debian/Ubuntu:    sudo apt remove pulseops
+  RHEL/Alma/Fedora: sudo dnf remove pulseops"""
+
+
 def cmd_update(args: argparse.Namespace) -> int:
     mode = detect_install_mode()
+    if mode == "package":
+        print(PACKAGE_UPDATE_HINT, file=sys.stderr)
+        print(f"Yeni sürümler: https://github.com/{REPO}/releases/latest", file=sys.stderr)
+        return 1
     repo_url = f"git+https://github.com/{REPO}.git"
     if mode == "binary":
         return _update_binary(Path(sys.executable).resolve(), args.force)
@@ -165,6 +183,9 @@ def cmd_update(args: argparse.Namespace) -> int:
 
 def cmd_uninstall(args: argparse.Namespace) -> int:
     mode = detect_install_mode()
+    if mode == "package":
+        print(PACKAGE_REMOVE_HINT, file=sys.stderr)
+        return 1
     if mode == "source":
         print("Bu kurulum kaynak koddan yapılmış; `pip uninstall pulseops` ile kaldırın.", file=sys.stderr)
         return 1

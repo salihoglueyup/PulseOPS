@@ -1,0 +1,79 @@
+# PulseOps yapılandırması
+# Kopyalayın: /etc/pulseops/config.toml (sistem geneli) veya ~/.config/pulseops/config.toml
+# Sistem geneli: /etc/pulseops/config.toml   Kullanıcı: ~/.config/pulseops/config.toml
+# Komut satırı bayrakları bu dosyadaki değerleri ezer. Değiştirmek istediğiniz satırın başındaki '#' işaretini kaldırın.
+
+[general]
+# Hızlı metrik yenileme aralığı (sn): CPU, RAM, port, süreç
+# interval = 2.0
+# Ağır kontrollerin aralığı (sn): servis, docker, nginx, yedek
+# slow_interval = 30.0
+# Yalnızca ASCII karakter kullan
+# ascii = false
+# Renksiz (gri tonlamalı) çıktı
+# no_color = false
+# Fare desteği
+# mouse = true
+# Root değilken yavaş kontrollerde parolasız `sudo -n` kullan (her çağrı auth log'a yazılır)
+# use_sudo = true
+
+[fleet]
+# Filo: `pulseops fleet` ve `check --all` için sunucular (ör. "web01", "deploy@10.0.0.5:2222", "local")
+# hosts = []
+# Gruplar (--group ile seçilir), ör. { web = ["web01", "web02"] }
+# groups = {  }
+# Aynı anda sorgulanacak en fazla sunucu
+# parallel = 8
+
+[notify]
+# Bu önemin altındaki güvenlik değişiklikleri bildirilmez
+# min_severity = "MEDIUM"
+# check durumu değişince bildir (OK → WARNING, düzelince → OK)
+# on_state_change = true
+# Bildirim kanalları (yalnızca `pulseops check` gönderir; durum değişince ve yeni güvenlik değişikliğinde).
+# Gizli değerler için "env:DEGISKEN" yazabilirsiniz; deneme: pulseops notify --test
+#
+# [[notify.channels]]
+# type = "telegram"
+# bot_token = "env:PULSEOPS_TELEGRAM_TOKEN"
+# chat_id = "123456789"
+#
+# [[notify.channels]]
+# type = "slack"            # veya "discord", "webhook" (JSON POST)
+# url = "env:PULSEOPS_SLACK_WEBHOOK"
+#
+# [[notify.channels]]
+# type = "email"
+# smtp_host = "smtp.ornek.com"
+# smtp_port = 587
+# security = "starttls"     # starttls | ssl | none
+# username = "alarm@ornek.com"
+# password = "env:PULSEOPS_SMTP_PASSWORD"
+# sender = "alarm@ornek.com"
+# to = ["ops@ornek.com"]
+
+[history]
+# Metrik geçmişi ve güvenlik değişikliği tespiti (~/.local/share/pulseops/history.db)
+# enabled = true
+# `pulseops check`: yüksek önemli yeni değişiklikte en az bu çıkış kodu
+# drift_exit = "warning"
+
+[ssh]
+# Bilinmeyen sunucu anahtarı: ask = parmak izini sor, accept-new = ilk bağlantıda kabul et, yes = reddet
+# host_key_checking = "ask"
+
+[check]
+# `pulseops check`: bu skorun altı WARNING
+# warn = 80
+# `pulseops check`: bu skorun altı CRITICAL
+# crit = 50
+
+[alerts]
+# Disk doluluk uyarı eşiği (%)
+# disk_percent = 80.0
+# RAM kullanım uyarı eşiği (%)
+# memory_percent = 85.0
+# SSL bitişine kalan gün uyarı eşiği
+# ssl_days = 7
+# Bu sayının üzerinde başarısız SSH denemesi ve fail2ban koruması yoksa uyar
+# ssh_failed_logins = 100

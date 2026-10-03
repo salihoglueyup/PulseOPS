@@ -1,0 +1,45 @@
+# Builds pulseops_<version>_amd64.deb and pulseops-<version>-1.x86_64.rpm from the release binary.
+#   (binary at dist/pulseops-linux-amd64)  PULSEOPS_VERSION=1.2.0 nfpm pkg -f packaging/nfpm.yaml -p deb -t dist/
+name: pulseops
+arch: amd64
+platform: linux
+version: ${PULSEOPS_VERSION}
+release: 1
+section: admin
+priority: optional
+maintainer: "Eyüp Zeki Salihoğlu <eyupzekisalihoglu@gmail.com>"
+description: |
+  Agentless, read-only server observability TUI.
+  Live CPU/RAM/disk/ports/services/docker/nginx/backups, SSH hardening and
+  SOC view (fail2ban, SSH logins, privileged accounts), security drift
+  detection, notifications and multi-server fleet view - over SSH or on
+  the server itself. No agent, no daemon.
+vendor: PulseOps
+homepage: https://github.com/salihoglueyup/PulseOPS
+license: MIT
+
+# The binary is self-contained except for glibc (built on glibc 2.28)
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.28)
+  rpm:
+    depends:
+      - glibc >= 2.28
+
+contents:
+  - src: dist/pulseops-linux-amd64
+    dst: /usr/bin/pulseops
+    file_info:
+      mode: 0755
+  - src: /usr/bin/pulseops
+    dst: /usr/bin/pulsetui
+    type: symlink
+  - src: README.md
+    dst: /usr/share/doc/pulseops/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/pulseops/LICENSE
+  - src: docs/SECURITY.md
+    dst: /usr/share/doc/pulseops/SECURITY.md
+  - src: packaging/config.example.toml
+    dst: /usr/share/doc/pulseops/config.example.toml
