@@ -12,20 +12,47 @@ permissions:
 jobs:
   test:
     name: Run Tests
+    uses: ./.github/workflows/ci.yml
+
+  build-linux:
+    needs: test
+    name: Build Linux amd64 (glibc 2.28)
     runs-on: ubuntu-latest
+    # Built on AlmaLinux 8 (glibc 2.28) so the binary runs on Ubuntu 20.04+, Debian 10+ and RHEL 8+.
+    # Building on ubuntu-latest would tie the bundled libpython to that runner's much newer glibc.
+    container: almalinux:8
     steps:
+      - name: Install build toolchain
+        run: dnf install -y python3.11 python3.11-pip python3.11-devel binutils git
+
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+
       - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest pytest-asyncio
-      - name: Run Pytest
-        run: pytest -v
+          python3.11 -m pip install --upgrade pip
+          python3.11 -m pip install . pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          python3.11 -m PyInstaller --noconfirm --clean --onefile \
+            --name pulseops-linux-amd64 \
+            --collect-all textual \
+            --add-data "ui/styles.tcss:ui" \
+            cli.py
+
+      - name: Smoke test binary
+        run: |
+          ./dist/pulseops-linux-amd64 --version
+          ./dist/pulseops-linux-amd64 status --demo
+          # Demo data scores 65/100, so `check` must exit with WARNING (1)
+          set +e; ./dist/pulseops-linux-amd64 check --demo; code=$?; set -e
+          test "$code" -eq 1
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulseops-linux-amd64
+          path: dist/pulseops-linux-amd64
 
   build:
     needs: test
@@ -34,10 +61,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            artifact_name: pulseops-linux-amd64
-            asset_name: pulseops-linux-amd64
-            sep: ":"
           - os: windows-latest
             artifact_name: pulseops.exe
             asset_name: pulseops-windows-amd64.exe
@@ -87,7 +110,7 @@ jobs:
           path: dist/${{ matrix.asset_name }}
 
   release:
-    needs: build
+    needs: [build, build-linux]
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -98,6 +121,12 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd release-assets
+          for f in *; do sha256sum "$f" > "$f.sha256"; done
+          ls -la
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

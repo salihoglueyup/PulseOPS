@@ -81,6 +81,15 @@ graph TD
 * `collectors/base.py` (`DemoCollector`, `collectors/mock_collector.py` üzerine kurulu):
   * Geliştirme, test ve sunum amaçlı gerçekçi mock veri simülatörüdür.
 
+* `collectors/telemetry.py`: `collect_telemetry(collector)` tek bir polling turunu `models/telemetry.py::Telemetry` nesnesi olarak döndürür; `summarize_alerts()` aktif riskleri listeler. `status`/`report`/`check` komutları bunu kullanır.
+* `collectors/privilege_collector.py`: Yerel süreç veya SSH probe'unun `PRIV` bölümünden yetki durumunu (`PrivilegeInfo`) çıkarır.
+
+### A2. Komut Satırı Katmanı
+* `cli.py`: TUI argümanları (`--interval`, `--no-color`, `--ascii`, `--no-mouse`) ve alt komut yönlendirmesi.
+* `commands.py`: Ortak bağlantı argümanları, collector seçimi, `status` / `report` / `check`.
+* `installer.py`: `version` / `update` / `uninstall`; kurulum türünü (binary, venv, pipx, kaynak) algılar.
+* `ui/ascii_filter.py`: `--ascii` modunda terminale giden her karakteri aynı hücre genişliğinde ASCII karşılığına çeviren Textual çıktı filtresi.
+
 ### B. Alan Modelleri (Domain Models - Pydantic v2)
 Bütün telemetri verileri güçlü tip garantisi (`BaseModel`) ve doğrulama kurallarıyla modellenmiştir:
 * `models/system.py`: `SystemSnapshot`, `CPUUsage`, `MemoryUsage`, `DiskPartition`, `ProcessInfo`, `FirewallStatus`.

@@ -50,13 +50,19 @@ Geleneksel gözlem araçları (Datadog, Prometheus, Zabbix vb.) sunucuya kalıc�
 
 ### 1. Kurulum (Linux)
 
-Python 3.10 veya üzeri sürüm gereklidir. Sunucuya SSH ile bağlanıp tek komutla kurun:
+Sunucuya SSH ile bağlanıp tek komutla kurun:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/salihoglueyup/PulseOPS/main/install.sh | bash
 ```
 
-Kurulumdan sonra sunucu üzerinde doğrudan `pulseops` yazmanız yeterlidir.
+Installer önce hazır binary'yi indirir (Python gerekmez; x86_64, glibc 2.28+ yani Ubuntu 20.04+, Debian 10+, RHEL 8+) ve SHA-256 ile doğrular. Binary yoksa veya çalışmazsa Python 3.10+ ile izole bir ortama kaynak koddan kurar. `root` olarak çalıştırılırsa `/usr/local/bin`, değilse `~/.local/bin` altına kurar.
+
+```bash
+pulseops update       # en son sürüme güncelle
+pulseops uninstall    # kaldır
+pulseops version      # sürüm ve kurulum türü
+```
 
 Geliştirme için kaynak koddan kurulum:
 
@@ -68,25 +74,52 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-### 2. Çalıştırma Modları
-
-PulseOps üç esnek çalışma modunu destekler:
+### 2. Çalıştırma
 
 ```bash
-# 1. Simülasyon / Demo Modu (Gerçekçi web siteleri, veritabanları ve şişmiş cache senaryoları):
+# Bu sunucuyu canlı izle (varsayılan mod):
+pulseops
+
+# Tam görünüm (tüm süreçlerin port sahipleri, güvenlik duvarı kuralları, docker):
+sudo pulseops
+
+# Simülasyon / Demo Modu (gerçekçi örnek verilerle):
 pulseops --demo
 
-# 2. Yerel Canlı Mod (Komutu çalıştırdığınız Linux sunucusunu canlı gözlemleyin, varsayılan):
-pulseops --live
-
-# 3. Uzak SSH ile Ajansız Sunucu İzleme:
-pulseops --host 192.168.1.50 --user ubuntu --key ~/.ssh/id_rsa
-
-# Parola ile bağlanmak için (anahtar verilmezse parola güvenli şekilde sorulur):
-pulseops --host 192.168.1.50 --user root --port 2222
+# Başka bir sunucuyu kendi makinenizden SSH ile ajansız izleme:
+pulseops ubuntu@192.168.1.50 --key ~/.ssh/id_ed25519
+pulseops root@192.168.1.50 --port 2222      # anahtar verilmezse parola güvenli şekilde sorulur
 ```
 
-> **İpucu:** `pulseops` veya `pulsetui` komutlarının her ikisi de kullanılabilir.
+> **Root olmayan kullanıcılar:** PulseOps yetkinizi otomatik algılar. Erişemediği veriler varsa header'da `kullanıcı (kısıtlı)` rozeti ve ne eksik olduğunu anlatan bir bildirim gösterir.
+
+### 3. SSH Terminali İçin Seçenekler
+
+| Seçenek | Ne işe yarar |
+| :--- | :--- |
+| `--interval 5` | Yenileme aralığı (saniye). Yavaş SSH bağlantılarında ve sunucu yükünü azaltmak için artırın. |
+| `--no-color` | Renksiz (gri tonlamalı) çıktı. `NO_COLOR` ortam değişkeni de desteklenir. |
+| `--ascii` | Emoji / Unicode desteklemeyen terminaller için yalnızca ASCII. UTF-8 olmayan terminallerde otomatik açılır. |
+| `--no-mouse` | Fare desteğini kapatır; tmux/screen içinde metin seçimi için. |
+
+### 4. Etkileşimsiz Komutlar (cron, script, monitoring)
+
+```bash
+pulseops status                 # TUI açmadan tek ekranlık özet
+pulseops status --json          # makine tarafından okunabilir tam telemetri
+pulseops report                 # Markdown denetim raporu -> audit-reports/
+pulseops report -f json -o -    # JSON raporu stdout'a
+pulseops check                  # sağlık skoruna göre çıkış kodu
+```
+
+`pulseops check` Nagios/Icinga eklenti formatında tek satır ve performans verisi yazar. Çıkış kodları: `0` OK, `1` WARNING (skor < `--warn`, varsayılan 80), `2` CRITICAL (skor < `--crit`, varsayılan 50), `3` UNKNOWN (veri toplanamadı).
+
+```bash
+# Örnek: skor düşerse her saat e-posta at
+0 * * * * pulseops check --warn 70 || pulseops report -f md -o - | mail -s "PulseOps uyarısı" ops@ornek.com
+```
+
+> **İpucu:** Tüm komutlar uzak sunucu için de çalışır: `pulseops check root@sunucu --key ~/.ssh/id_ed25519`
 
 ---
 

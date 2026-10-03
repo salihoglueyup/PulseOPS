@@ -51,6 +51,7 @@ THEMES = [
 ]
 
 from ui.theme_css import DEFAULT_TCSS
+from ui.ascii_filter import AsciiFilter
 
 _CSS_FILE = Path(__file__).parent / "styles.tcss"
 
@@ -101,9 +102,11 @@ class ServerTUIApp(App):
         Binding("s", "tab_0", "Storage (s)", show=False),
     ]
 
-    def __init__(self, collector: BaseCollector, poll_interval: float = 1.5, **kwargs):
+    def __init__(self, collector: BaseCollector, poll_interval: float = 1.5, ascii_mode: bool = False, **kwargs):
         super().__init__(**kwargs)
         self.collector = collector
+        self._ascii_filter = AsciiFilter() if ascii_mode else None
+        self._privilege_warning_shown = False
         self.poll_interval = poll_interval
         self.log_collector = LogCollector()
         self._current_theme_idx = 0
@@ -172,6 +175,12 @@ class ServerTUIApp(App):
             with TabPane("[0] Depolama", id="tab-storage"):
                 yield self.storage_panel
         yield Footer()
+
+    def get_line_filters(self):
+        filters = list(super().get_line_filters())
+        if self._ascii_filter is not None:
+            filters.append(self._ascii_filter)
+        return filters
 
     def on_mount(self) -> None:
         self.search_input.can_focus = False
@@ -412,6 +421,17 @@ class ServerTUIApp(App):
             self._last_containers = containers
 
             # Update Header
+            privileges = self.collector.poll_privileges()
+            self.header_bar.user_label = privileges.user
+            self.header_bar.access_limited = bool(privileges.limitations)
+            if privileges.limitations and not self._privilege_warning_shown:
+                self._privilege_warning_shown = True
+                self.notify(
+                    "\n".join(f"• {item}" for item in privileges.limitations) + f"\n\n{privileges.hint}",
+                    title=f"Kısıtlı erişim: {privileges.user}",
+                    severity="warning",
+                    timeout=12.0,
+                )
             self.header_bar.hostname = snapshot.hostname
             self.header_bar.os_name = snapshot.os_name
             self.header_bar.kernel = snapshot.kernel

@@ -1,137 +1,73 @@
+import os
 import sys
 import argparse
-import platform
-import getpass
 
-from collectors.base import LocalLiveCollector, DemoCollector
-from ui.app import ServerTUIApp
+from version import __version__
+from commands import SUBCOMMANDS, add_connection_args, build_collector, build_subcommand_parsers
 
-def main():
+EPILOG = """komutlar:
+  pulseops                      bu sunucuyu canlı izler (TUI)
+  pulseops root@sunucu          uzak sunucuyu SSH ile izler (TUI)
+  pulseops status [--json]      TUI açmadan özet yazdırır
+  pulseops report [-f md|json]  denetim raporu üretir
+  pulseops check                sağlık skoruna göre çıkış kodu (cron / monitoring)
+  pulseops update | uninstall   kendini günceller / kaldırır
+  pulseops version              sürüm bilgisi
+"""
+
+
+def build_tui_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="PulseOps (PulseTUI): Agentless Real-Time Server, Web & Infrastructure Observability TUI"
+        prog="pulseops",
+        description="PulseOps (PulseTUI): Agentless Real-Time Server, Web & Infrastructure Observability TUI",
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "target",
-        nargs="?",
-        help="Uzak sunucu hedefi (örn: root@192.168.1.100 veya 192.168.1.100 veya demo)",
-    )
-    parser.add_argument(
-        "--demo",
-        action="store_true",
-        help="Simülasyon / Demo modunu başlatır (Örnek verilerle)",
-    )
-    parser.add_argument(
-        "--live",
-        action="store_true",
-        help="Doğrudan yerel makine verilerini çeker",
-    )
-    parser.add_argument(
-        "--ssh", "--host",
-        dest="host",
-        type=str,
-        help="Uzak Linux sunucusuna SSH üzerinden bağlanır (örn: root@192.168.1.100 veya 192.168.1.100)",
-    )
-    parser.add_argument(
-        "-u", "--user",
-        type=str,
-        default=None,
-        help="SSH kullanıcı adı (varsayılan: root)",
-    )
-    parser.add_argument(
-        "-p", "--port",
-        type=int,
-        default=22,
-        help="SSH port numarası (varsayılan: 22)",
-    )
-    parser.add_argument(
-        "-k", "--key",
-        type=str,
-        help="SSH özel anahtar dosyası yolu (örn: ~/.ssh/id_rsa veya id_ed25519)",
-    )
-    parser.add_argument(
-        "-P", "--password",
-        type=str,
-        help="SSH giriş şifresi (özel anahtar kullanılmıyorsa)",
-    )
+    add_connection_args(parser)
     parser.add_argument(
         "--interval",
         type=float,
         default=1.5,
-        help="Metrik yenileme aralığı (saniye cinsinden, varsayılan: 1.5)",
+        help="Metrik yenileme aralığı, saniye (varsayılan: 1.5). Yavaş SSH bağlantılarında artırın.",
     )
+    parser.add_argument("--no-color", action="store_true", help="Renksiz çıktı (NO_COLOR ortam değişkeni de desteklenir)")
+    parser.add_argument("--ascii", action="store_true", help="Emoji/Unicode desteklemeyen terminaller için yalnızca ASCII karakter kullanır")
+    parser.add_argument("--no-mouse", action="store_true", help="Fare desteğini kapatır (tmux/screen'de metin seçimi için)")
+    parser.add_argument("-V", "--version", action="version", version=f"pulseops {__version__}")
+    return parser
 
-    args = parser.parse_args()
 
-    # Determine target from positional or flags
-    ssh_target = args.host or args.target
-    if ssh_target in ("demo", "mock"):
-        args.demo = True
-        ssh_target = None
-    elif ssh_target in ("live", "local"):
-        args.live = True
-        ssh_target = None
+def terminal_supports_unicode() -> bool:
+    encoding = (getattr(sys.stdout, "encoding", None) or "").lower().replace("-", "")
+    return encoding.startswith("utf")
 
-    if ssh_target:
-        from collectors.ssh_collector import SSHCollector
-        ssh_target = ssh_target.strip()
-        if "@" in ssh_target:
-            username, host = ssh_target.split("@", 1)
-        else:
-            username, host = (args.user or "root"), ssh_target
-            
-        if args.user:
-            username = args.user
 
-        password = args.password
-        key_filename = args.key
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
 
-        # Interactive password prompt if not provided and no key specified
-        if not password and not key_filename:
-            try:
-                pwd_input = getpass.getpass(f"🔑 {username}@{host} için SSH Şifresi (Varsayılan anahtarı denemek için Enter): ")
-                if pwd_input.strip():
-                    password = pwd_input.strip()
-            except (KeyboardInterrupt, EOFError):
-                print("\nİptal edildi.")
-                sys.exit(0)
+    if argv and argv[0] in SUBCOMMANDS:
+        args = build_subcommand_parsers().parse_args(argv)
+        sys.exit(args.func(args))
 
-        print(f"🔗 Uzak Linux sunucusuna bağlanılıyor: {username}@{host}:{args.port}...")
-        collector = SSHCollector(
-            host=host,
-            username=username,
-            port=args.port,
-            key_filename=key_filename,
-            password=password,
-        )
+    args = build_tui_parser().parse_args(argv)
+    if args.interval < 0.5:
+        args.interval = 0.5
 
-        # Pre-flight connection test
-        try:
-            collector.test_connection()
-            print("✓ SSH Bağlantısı başarılı! Sistem telemetrisi toplanıyor...")
-        except Exception as e:
-            print(f"\n❌ [HATA] Sunucuya SSH ile bağlanılamadı:\n   {e}\n")
-            print("💡 Olası Nedenler:")
-            print(f"   1. {host}:{args.port} adresine erişim engellenmiş veya port kapalı olabilir.")
-            print(f"   2. '{username}' kullanıcısı için şifre veya anahtar reddedildi.")
-            print("   3. Sunucudaki güvenlik duvarı (UFW / iptables) bağlantıyı kısıtlıyor olabilir.")
-            sys.exit(1)
+    if args.no_color:
+        # Textual reads NO_COLOR when the App is constructed
+        os.environ["NO_COLOR"] = "1"
 
-    elif args.demo:
-        collector = DemoCollector()
-    elif args.live:
-        collector = LocalLiveCollector()
-    else:
-        # Auto-detect: if on Windows, default to demo mode unless --live is passed
-        if platform.system() == "Windows":
-            print("💡 Bilgi: Windows ortamı algılandı. Gerçekçi simülasyon (Demo Modu) başlatılıyor...")
-            print("   (Uzak Linux sunucusu için: .\\run.ps1 root@sunucu-ip)")
-            print("   (veya: .\\run.ps1 --host sunucu-ip -u root)")
-            collector = DemoCollector()
-        else:
-            collector = LocalLiveCollector()
+    collector = build_collector(args)
 
-    app = ServerTUIApp(collector=collector, poll_interval=args.interval)
-    app.run()
+    from ui.app import ServerTUIApp
+
+    app = ServerTUIApp(
+        collector=collector,
+        poll_interval=args.interval,
+        ascii_mode=args.ascii or not terminal_supports_unicode(),
+    )
+    app.run(mouse=not args.no_mouse)
+
 
 if __name__ == "__main__":
     main()

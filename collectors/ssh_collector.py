@@ -32,8 +32,10 @@ from collectors.service_collector import ServiceCollector
 from collectors.db_collector import DatabaseCollector
 from collectors.security_collector import SecurityCollector
 from collectors.storage_collector import StorageCollector
+from collectors.privilege_collector import PRIV_PROBE, parse_privileges_section
 
-BATCH_PROBE_SCRIPT = r"""cat << 'EOF' | sh
+BATCH_PROBE_SCRIPT = (
+    r"""cat << 'EOF' | sh
 echo "===SECTION:HOST==="
 hostname 2>/dev/null
 uname -r 2>/dev/null
@@ -77,9 +79,12 @@ echo "===SECTION:SSHD_CONF==="
 cat /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null | head -n 60
 echo "===SECTION:LOGS==="
 journalctl -n 40 --no-pager 2>/dev/null || tail -n 40 /var/log/nginx/access.log /var/log/syslog /var/log/messages 2>/dev/null
-echo "===SECTION:END==="
+"""
+    + PRIV_PROBE
+    + """echo "===SECTION:END==="
 EOF
 """
+)
 
 class SSHCollector(BaseCollector):
     """Agentless remote collector querying a Linux host via SSH and parsing native telemetry."""
@@ -524,6 +529,9 @@ class SSHCollector(BaseCollector):
         self._last_storage = storage
 
         return snapshot, ports, routes, backups, containers
+
+    def poll_privileges(self):
+        return parse_privileges_section(getattr(self, "_last_sections", {}).get("PRIV", ""))
 
     def poll_logs(self) -> list[str]:
         return self._last_logs

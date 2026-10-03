@@ -11,6 +11,8 @@ class HeaderBar(Widget):
     kernel = reactive("")
     uptime_str = reactive("0m")
     alerts_count = reactive(0)
+    user_label = reactive("")
+    access_limited = reactive(False)
     theme_name = reactive("Silver Minimal")
     current_time = reactive("")
 
@@ -33,6 +35,12 @@ class HeaderBar(Widget):
         if self.kernel:
             t.append(f"({self.kernel}) ", style="#6e7681")
         t.append("│ ", style="#30363d")
+        if self.user_label:
+            if self.access_limited:
+                t.append(f"{self.user_label} (kısıtlı) ", style="bold #d29922")
+            else:
+                t.append(f"{self.user_label} ", style="#8b949e")
+            t.append("│ ", style="#30363d")
         t.append("Uptime: ", style="#8b949e")
         t.append(f"{self.uptime_str} ", style="bold #f0f6fc")
         t.append("│ ", style="#30363d")

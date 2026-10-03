@@ -22,39 +22,52 @@ Amaç: Uygulama desteklenen tüm Python sürümlerinde açılsın, her değişik
 - ✅ README ve ARCHITECTURE düzeltmeleri (repo adresi, test rozeti, var olmayan dosyalar,
   `--password` örneği)
 
-## Faz 1 — Linux Sunucu Deneyimi
+## Faz 1 — Linux Sunucu Deneyimi ✅
 
 Amaç: Herhangi bir Linux sunucusunda tek komutla kurulup `pulseops` ile sorunsuz açılsın.
 
 ### Kurulum & dağıtım
-- ⬜ Release yalnızca Linux amd64: eski glibc ile uyumlu binary (manylinux / eski base image)
-- ⬜ `install.sh`: varsayılan olarak binary indirme, Python/venv yolu yedek; checksum doğrulama
-- ⬜ `pulseops --version`, `pulseops update`, `pulseops uninstall`
+- ✅ Linux release binary'si AlmaLinux 8 (glibc 2.28) container'ında derleniyor; yayından önce
+  binary üzerinde smoke test; tüm release dosyaları için `.sha256`
+  (önceden `ubuntu-latest` üzerinde derleniyordu → Ubuntu 22.04 / Debian 12'de çalışmıyordu)
+- ✅ `install.sh`: önce binary (SHA-256 doğrulamalı), olmazsa Python/venv; root → `/usr/local/bin`
+- ✅ `pulseops version`, `pulseops update` (binary: checksum doğrulamalı atomik değişim), `pulseops uninstall`
 
 ### Terminal deneyimi (SSH oturumu içinde)
-- ⬜ Küçük terminal (80x24) uyumu
-- ⬜ `--no-color` / `NO_COLOR`, `--ascii` (emoji/Unicode olmayan terminaller)
-- ⬜ `--no-mouse` (tmux/screen), ayarlanabilir yenileme aralığı
-- ⬜ TUI'nin kendi kaynak tüketiminin ölçülmesi (hedef: boşta < %2 CPU)
+- ✅ Küçük terminal (80x24) uyumu doğrulandı
+- ✅ `--no-color` / `NO_COLOR`, `--ascii` (genişlik korumalı dönüşüm; UTF-8 olmayan terminalde otomatik)
+- ✅ `--no-mouse`, ayarlanabilir `--interval`
+- ✅ TUI'nin kaynak tüketimi ölçüldü (4 çekirdek, 140x40 terminal):
+
+  | Mod | CPU (tek çekirdek) | RSS | Terminal çıktısı |
+  | :--- | ---: | ---: | ---: |
+  | `--demo` (render maliyeti) | %1.0 | 58 MB | 3.1 KB/s |
+  | `--live`, 1.5 sn | %18.1 | 58 MB | 3.0 KB/s |
+  | `--live`, 5 sn | %5.8 | 58 MB | 1.0 KB/s |
+
+  Render ucuz; maliyet her turda yapılan toplama (~226 ms: `systemctl` 125 ms, `docker system df` 39 ms,
+  `docker ps` 19 ms, loglar 19 ms). %2 hedefi Faz 2'deki hızlı/yavaş polling katmanlarıyla karşılanacak.
 
 ### Root olmayan kullanıcı
-- ⬜ Yetki gerektiren veriler için boş tablo yerine açıklayıcı mesaj
-  ("root veya docker grubu gerekli")
-- ⬜ Başlangıçta yetki durumunun tespiti ve header'da gösterimi
+- ✅ Yerel ve SSH modunda yetki tespiti (root, parolasız sudo, docker erişimi)
+- ✅ Header'da `kullanıcı (kısıtlı)` rozeti + eksik verileri ve çözümü anlatan tek seferlik bildirim;
+  `pulseops status` çıktısında da gösterilir
 
 ### Etkileşimsiz komutlar
-- ⬜ `pulseops status` — TUI açmadan düz metin özet
-- ⬜ `pulseops report --format md|json` — denetim raporu
-- ⬜ `pulseops check` — sağlık skoruna göre çıkış kodu (cron / monitoring için)
+- ✅ `pulseops status [--json]`
+- ✅ `pulseops report --format md|json [-o DİZİN | -o -]`
+- ✅ `pulseops check [--warn N --crit N]` — Nagios uyumlu çıkış kodu ve perfdata
 
 ## Faz 2 — Mimari
 
 Amaç: Arayüz hiç donmasın, yerel ve SSH modu aynı kod yolunu kullansın.
 
-- ⬜ Polling'in Textual thread worker'a taşınması (UI thread'i bloklanmasın)
-- ⬜ Tek `Telemetry` Pydantic modeli; `poll()` tuple'ı ve `hasattr` kontrollerinin kaldırılması
+- ⬜ Polling'in Textual thread worker'a taşınması (şu an her turda UI ~0.2 sn donuyor)
+- 🚧 Tek `Telemetry` Pydantic modeli (`models/telemetry.py`, CLI komutları kullanıyor); TUI'nin de buna
+  geçmesi, `poll()` tuple'ı ve `hasattr` kontrollerinin kaldırılması
 - ⬜ Tek veri toplama yolu: yerel modda da aynı probe betiği + aynı parser
-- ⬜ Hızlı / yavaş polling katmanları (CPU/RAM/port ≈ 2 sn; disk/docker/nginx/yedek ≈ 30–60 sn)
+- ⬜ Hızlı / yavaş polling katmanları (CPU/RAM/port ≈ 2 sn; servis/docker/depolama/yedek ≈ 30–60 sn)
+  — hedef: canlı modda boşta < %2 CPU (Faz 1 ölçümü: %18)
 - ⬜ Hataların yutulmaması: bağlantı/toplama hatası banner'ı + `~/.cache/pulseops/pulseops.log`
 - ⬜ Yapılandırma dosyası: `/etc/pulseops/config.toml`, `~/.config/pulseops/config.toml`
 

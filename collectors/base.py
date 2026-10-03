@@ -39,6 +39,10 @@ class BaseCollector(ABC):
         from models.storage import StorageOverview
         return StorageOverview()
 
+    def poll_privileges(self):
+        from models.privileges import PrivilegeInfo
+        return PrivilegeInfo()
+
 class LocalLiveCollector(BaseCollector):
     """Collects actual data from the local host system."""
 
@@ -57,6 +61,7 @@ class LocalLiveCollector(BaseCollector):
         self.db = DatabaseCollector()
         self.security = SecurityCollector()
         self.storage = StorageCollector()
+        self._privileges = None
 
     def poll(self) -> Tuple[SystemSnapshot, list[ListeningPort], list[ProxyRoute], list[BackupTask], list[ContainerSummary]]:
         snapshot = self.system.collect_snapshot()
@@ -94,6 +99,12 @@ class LocalLiveCollector(BaseCollector):
 
     def poll_storage(self):
         return self.storage.collect_local()
+
+    def poll_privileges(self):
+        from collectors.privilege_collector import collect_local_privileges
+        if self._privileges is None:
+            self._privileges = collect_local_privileges()
+        return self._privileges
 
 class DemoCollector(BaseCollector):
     """Provides simulated realistic server telemetry for demonstration and UI testing."""

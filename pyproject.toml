@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pulseops"
-version = "1.0.0"
+dynamic = ["version"]
 description = "PulseOps (PulseTUI): Agentless Real-Time Server, Web & Infrastructure Observability TUI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,7 +29,10 @@ pulsetui = "cli:main"
 server-tui = "cli:main"
 
 [tool.setuptools]
-py-modules = ["cli", "main"]
+py-modules = ["cli", "main", "commands", "installer", "version"]
+
+[tool.setuptools.dynamic]
+version = {attr = "version.__version__"}
 
 [tool.setuptools.package-data]
 ui = ["*.tcss", "**/*.tcss"]
