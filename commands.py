@@ -1,4 +1,5 @@
 """Shared CLI plumbing and non-interactive commands (status, report, check)."""
+import os
 import sys
 import json
 import getpass
@@ -20,74 +21,131 @@ from pulseops_config import Config, ConfigError, init_user_config, render_config
 EXIT_OK, EXIT_WARNING, EXIT_CRITICAL, EXIT_UNKNOWN = 0, 1, 2, 3
 
 
+class _RemovedPasswordFlag(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser.error(
+            f"{option_string} kaldırıldı: komut satırındaki şifre `ps` çıktısında ve shell geçmişinde görünür. "
+            "Şifre gerekiyorsa PulseOps güvenli şekilde sorar; otomasyon için PULSEOPS_SSH_PASSWORD "
+            "ortam değişkenini kullanın (tercihen SSH anahtarı)."
+        )
+
+
 def add_connection_args(parser: argparse.ArgumentParser) -> None:
     """Arguments that select which host is observed; shared by the TUI and every subcommand."""
     parser.add_argument(
         "target",
         nargs="?",
-        help="Uzak sunucu hedefi (örn: root@192.168.1.100). Verilmezse bu makine izlenir.",
+        help="Uzak sunucu: user@host[:port] veya ~/.ssh/config'teki bir Host adı. Verilmezse bu makine izlenir.",
     )
     parser.add_argument("--demo", action="store_true", help="Simülasyon / Demo modunu başlatır (örnek verilerle)")
     parser.add_argument("--live", action="store_true", help="Bu makineyi izler (varsayılan)")
-    parser.add_argument(
-        "--ssh", "--host",
-        dest="host",
-        type=str,
-        help="Uzak Linux sunucusuna SSH üzerinden bağlanır (örn: root@192.168.1.100)",
-    )
-    parser.add_argument("-u", "--user", type=str, default=None, help="SSH kullanıcı adı (varsayılan: root)")
-    parser.add_argument("-p", "--port", type=int, default=22, help="SSH port numarası (varsayılan: 22)")
-    parser.add_argument("-k", "--key", type=str, help="SSH özel anahtar dosyası yolu (örn: ~/.ssh/id_ed25519)")
-    parser.add_argument("-P", "--password", type=str, help=argparse.SUPPRESS)
+    parser.add_argument("--ssh", "--host", dest="host", type=str, help="Uzak sunucu (target ile aynı)")
+    parser.add_argument("-u", "--user", type=str, default=None, help="SSH kullanıcı adı (varsayılan: ~/.ssh/config, yoksa root)")
+    parser.add_argument("-p", "--port", type=int, default=None, help="SSH portu (varsayılan: ~/.ssh/config, yoksa 22)")
+    parser.add_argument("-k", "--key", type=str, help="SSH özel anahtarı (varsayılan: ~/.ssh/config, ssh-agent ve ~/.ssh/id_*)")
+    parser.add_argument("-J", "--jump", type=str, default=None,
+                        help="Atlama sunucusu (ProxyJump), örn: bastion veya user@bastion:2222,ikinci-hop")
+    parser.add_argument("-P", "--password", nargs="?", action=_RemovedPasswordFlag, help=argparse.SUPPRESS)
+
+
+def _ask_yes_no(question: str) -> bool:
+    try:
+        answer = input(question)
+    except (KeyboardInterrupt, EOFError):
+        print(file=sys.stderr)
+        return False
+    return answer.strip().lower() in ("e", "evet", "y", "yes")
+
+
+def _confirm_host_key(host_entry: str, key_type: str, fp: str) -> bool:
+    print(f"\n🔐 '{host_entry}' sunucusunun kimliği doğrulanamadı (known_hosts'ta kayıt yok).", file=sys.stderr)
+    print(f"   {key_type} anahtar parmak izi: {fp}", file=sys.stderr)
+    print("   Parmak izini sunucu yöneticinizden doğrulayın (sunucuda: ssh-keygen -lf /etc/ssh/ssh_host_*_key.pub).",
+          file=sys.stderr)
+    return _ask_yes_no("   Bağlanmaya devam edilsin ve anahtar ~/.ssh/known_hosts dosyasına eklensin mi? (evet/hayır): ")
+
+
+def _getpass(prompt: str) -> Optional[str]:
+    try:
+        value = getpass.getpass(prompt)
+    except (KeyboardInterrupt, EOFError):
+        print("\nİptal edildi.", file=sys.stderr)
+        sys.exit(EXIT_UNKNOWN)
+    return value or None
+
+
+def _fail(message: str) -> None:
+    print(f"❌ [HATA] {message}", file=sys.stderr)
+    sys.exit(EXIT_UNKNOWN)
 
 
 def build_collector(args: argparse.Namespace, interactive: bool = True) -> BaseCollector:
-    """Creates the collector selected by the connection arguments. Exits the process on SSH failure."""
-    ssh_target = args.host or args.target
-    if ssh_target in ("demo", "mock"):
-        args.demo, ssh_target = True, None
-    elif ssh_target in ("live", "local"):
-        args.live, ssh_target = True, None
+    """Creates the collector selected by the connection arguments. Exits the process on SSH failure.
 
-    use_sudo = _config(args).general.use_sudo
-    if not ssh_target:
+    SSH authentication follows OpenSSH: keys (command line, ~/.ssh/config, ssh-agent, ~/.ssh/id_*)
+    first; a passphrase or password is only asked for when a key is encrypted or keys are rejected.
+    """
+    import paramiko
+    from collectors.hostkeys import UnknownHostKeyError, describe_bad_host_key
+
+    destination = args.host or args.target
+    if destination in ("demo", "mock"):
+        args.demo, destination = True, None
+    elif destination in ("live", "local"):
+        args.live, destination = True, None
+
+    config = _config(args)
+    use_sudo = config.general.use_sudo
+    if not destination:
         return DemoCollector() if args.demo else create_local_collector(use_sudo=use_sudo)
 
     from collectors.ssh_collector import SSHCollector
+    from collectors.transport import SSHTransport, TransportError, resolve_target
 
-    ssh_target = ssh_target.strip()
-    if "@" in ssh_target:
-        username, host = ssh_target.split("@", 1)
-    else:
-        username, host = (args.user or "root"), ssh_target
-    if args.user:
-        username = args.user
-
-    password = args.password
-    if not password and not args.key and interactive and sys.stdin.isatty():
-        try:
-            pwd_input = getpass.getpass(f"🔑 {username}@{host} için SSH Şifresi (Varsayılan anahtarı denemek için Enter): ")
-            if pwd_input.strip():
-                password = pwd_input.strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nİptal edildi.", file=sys.stderr)
-            sys.exit(0)
-
+    can_prompt = interactive and sys.stdin.isatty()
+    target = resolve_target(destination.strip(), username=args.user, port=args.port, key_filename=args.key,
+                            proxy_jump=getattr(args, "jump", None))
+    transport = SSHTransport(
+        target,
+        password=os.environ.get("PULSEOPS_SSH_PASSWORD") or None,
+        host_key_mode=config.ssh.host_key_checking,
+        confirm_host_key=_confirm_host_key if can_prompt else None,
+    )
+    via = f" (atlama: {target.proxy_jump})" if target.proxy_jump else ""
     if interactive:
-        print(f"🔗 Uzak Linux sunucusuna bağlanılıyor: {username}@{host}:{args.port}...", file=sys.stderr)
-    collector = SSHCollector(host=host, username=username, port=args.port, key_filename=args.key, password=password,
-                             use_sudo=use_sudo)
-    try:
-        collector.test_connection()
-    except Exception as e:
-        print(f"❌ [HATA] {username}@{host}:{args.port} adresine SSH ile bağlanılamadı: {e}", file=sys.stderr)
-        if interactive:
-            print("💡 Olası nedenler:", file=sys.stderr)
-            print(f"   1. {host}:{args.port} adresine erişim engellenmiş veya port kapalı olabilir.", file=sys.stderr)
-            print(f"   2. '{username}' kullanıcısı için şifre veya anahtar reddedildi.", file=sys.stderr)
-            print("   3. Sunucudaki güvenlik duvarı (UFW / iptables) bağlantıyı kısıtlıyor olabilir.", file=sys.stderr)
-        sys.exit(EXIT_UNKNOWN)
-    return collector
+        print(f"🔗 Bağlanılıyor: {target.label}{via}...", file=sys.stderr)
+
+    for _ in range(4):
+        try:
+            transport.test_connection()
+            break
+        except paramiko.BadHostKeyException as e:
+            _fail(describe_bad_host_key(e))
+        except UnknownHostKeyError as e:
+            _fail(str(e))
+        except paramiko.PasswordRequiredException:
+            if not can_prompt or transport.passphrase:
+                _fail("SSH anahtarı parola korumalı. ssh-agent'a ekleyin (ssh-add) veya etkileşimli çalıştırın.")
+            transport.passphrase = _getpass("🔑 SSH anahtar parolası: ")
+        except paramiko.AuthenticationException:
+            if not can_prompt or transport.password:
+                _fail(f"{target.label}: kimlik doğrulaması reddedildi (anahtar/ssh-agent/şifre).")
+            transport.password = _getpass(f"🔑 {target.label} için SSH şifresi: ")
+        except (OSError, paramiko.SSHException, TransportError) as e:
+            if "No authentication methods available" in str(e) and can_prompt and not transport.password:
+                # No key and no agent: paramiko never reached the server's auth step
+                transport.password = _getpass(f"🔑 {target.label} için SSH şifresi: ")
+                continue
+            print(f"❌ [HATA] {target.label}{via} adresine bağlanılamadı: {e}", file=sys.stderr)
+            if interactive:
+                print("💡 Olası nedenler: adres/port yanlış, sunucu kapalı veya bir güvenlik duvarı engelliyor.",
+                      file=sys.stderr)
+            sys.exit(EXIT_UNKNOWN)
+    else:
+        _fail("Kimlik doğrulaması tamamlanamadı.")
+
+    transport.disable_prompts()
+    return SSHCollector(transport, use_sudo=use_sudo)
 
 
 def _score(t: Telemetry) -> tuple[int, str]:

@@ -6,7 +6,7 @@ Unknown keys are errors, so a typo never silently changes nothing.
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -47,8 +47,16 @@ class AlertConfig(_Section):
     ssl_days: int = Field(7, ge=0, le=365, description="SSL bitişine kalan gün uyarı eşiği")
 
 
+class SSHConfig(_Section):
+    host_key_checking: Literal["ask", "accept-new", "yes"] = Field(
+        "ask",
+        description="Bilinmeyen sunucu anahtarı: ask = parmak izini sor, accept-new = ilk bağlantıda kabul et, yes = reddet",
+    )
+
+
 class Config(_Section):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
+    ssh: SSHConfig = Field(default_factory=SSHConfig)
     check: CheckConfig = Field(default_factory=CheckConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
 

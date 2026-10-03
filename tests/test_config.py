@@ -45,7 +45,7 @@ def test_template_is_valid_and_all_commented(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     path = init_user_config()
     assert path == tmp_path / "pulseops" / "config.toml"
-    assert tomllib.loads(path.read_text(encoding="utf-8")) == {"general": {}, "check": {}, "alerts": {}}
+    assert tomllib.loads(path.read_text(encoding="utf-8")) == {"general": {}, "ssh": {}, "check": {}, "alerts": {}}
     with pytest.raises(ConfigError):
         init_user_config()
     init_user_config(force=True)

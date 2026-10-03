@@ -88,8 +88,11 @@ pulseops --demo
 
 # Başka bir sunucuyu kendi makinenizden SSH ile ajansız izleme:
 pulseops ubuntu@192.168.1.50 --key ~/.ssh/id_ed25519
-pulseops root@192.168.1.50 --port 2222      # anahtar verilmezse parola güvenli şekilde sorulur
+pulseops web01                              # ~/.ssh/config'teki Host adı (HostName, User, Port, IdentityFile, ProxyJump)
+pulseops deploy@10.0.0.5 -J bastion         # atlama sunucusu üzerinden (zincir: -J a,b)
 ```
+
+**SSH güvenliği:** Kimlik doğrulama OpenSSH ile aynı sırayı izler: önce `--key`, `~/.ssh/config`, ssh-agent ve `~/.ssh/id_*`. Anahtar parolalıysa anahtar parolası, anahtarlar reddedilirse şifre güvenli şekilde sorulur. Komut satırında şifre verilemez (`ps` ve shell geçmişinde görünürdü); otomasyon için `PULSEOPS_SSH_PASSWORD`. Sunucu anahtarları `~/.ssh/known_hosts` ile doğrulanır: bilinmeyen sunucuda parmak izi gösterilip onay istenir, **değişmiş** bir anahtarla bağlantı her zaman reddedilir (MITM koruması). Etkileşimsiz komutlar (`check`, cron) bilinmeyen anahtarı asla kabul etmez; davranış `[ssh] host_key_checking = "ask" | "accept-new" | "yes"` ile ayarlanır.
 
 > **Root olmayan kullanıcılar:** PulseOps yetkinizi otomatik algılar. Erişemediği veriler varsa header'da `kullanıcı (kısıtlı)` rozeti ve ne eksik olduğunu anlatan bir bildirim gösterir.
 
