@@ -1,6 +1,6 @@
 # 🏛️ PulseOps (PulseTUI) Altyapı ve Sistem Mimarisi
 
-> **PulseOps (PulseTUI)**: Linux ve Windows sunucuları için sıfır bağımlılıkla çalışan, ajan gerektirmeyen (agentless), gerçek zamanlı TUI (Terminal User Interface) gözlem, web proxy, güvenlik ve depolama teşhis motorudur.
+> **PulseOps (PulseTUI)**: Linux sunucuları için, ajan gerektirmeyen (agentless), gerçek zamanlı TUI (Terminal User Interface) gözlem, web proxy, güvenlik ve depolama teşhis motorudur.
 
 ---
 
@@ -12,7 +12,7 @@ Geleneksel sunucu izleme araçları (Datadog Agent, Prometheus Node Exporter, Za
 1. **Agentless (Ajansız Çalışma):** Uzak sunucuya hiçbir ajan, binary veya servis kurulmaz. Yalnızca standart SSH (`paramiko`) üzerinden standart Linux komutlarını (`ss`, `ps`, `df`, `docker`, `systemctl`, `ufw`) çalıştırarak telemetri toplar.
 2. **Sıfır Ayak İzi & %100 Salt-Okunur (Read-Only):** Sunucu üzerinde hiçbir dosya değiştirilmez, servis durdurulmaz. Yalnızca okuma izinli teşhis komutları çalıştırılır.
 3. **btop & Datadog Esintili UI:** Gelişmiş Textual reactive motoru ve Rich tabanlı kurumsal renk paleti (Datadog & JetBrains Dark) ile terminalde modern bir izleme deneyimi sunar.
-4. **Çoklu Platform:** Hem Linux sunucularda (Ubuntu, Debian, RHEL, CentOS) hem de Windows yerel geliştirici makinelerinde (Windows 11, PowerShell, WMI/psutil) yerel telemetri toplayabilir.
+4. **Linux Odaklı:** Linux sunucularda (Ubuntu, Debian, RHEL ailesi) doğrudan sunucu üzerinde (`pulseops`) veya uzaktan SSH ile (`pulseops user@host`) çalışır.
 
 ---
 
@@ -25,14 +25,14 @@ graph TD
     subgraph Data Collection Layer
         Collector[Collector Factory] -->|--demo| DemoCol[DemoCollector]
         Collector -->|--live (Local)| LocalCol[LocalLiveCollector]
-        Collector -->|--host (SSH Remote)| SSHCol[SSHLiveCollector]
+        Collector -->|--host (SSH Remote)| SSHCol[SSHCollector]
     end
 
     subgraph Parsing & Diagnostic Probes
         SSHCol --> NginxProbe[Nginx & Upstream Parser]
         SSHCol --> PortProbe[SS/Netstat & Port Security]
         SSHCol --> DBProbe[Database Discovery Probe]
-        SSHCol --> ServiceProbe[Systemd & Windows Service Probe]
+        SSHCol --> ServiceProbe[Systemd Service Probe]
         SSHCol --> SecProbe[SSH & Firewall Hardening Audit]
         SSHCol --> StorageProbe[BuildKit & Containerd Analyzer]
         SSHCol --> BackupProbe[Timers & Crontab Inspector]
@@ -72,13 +72,13 @@ graph TD
 * `collectors/base.py`:
   * `ServerCollector` soyut arayüzü `poll()` metodunu zorunlu kılar.
   * Polling sonucunda tam ve tipli telemetri paketleri döndürülür: `(snapshot, ports, routes, backups, containers, databases, services, security, storage)`.
-* `collectors/ssh_collector.py` (`SSHLiveCollector`):
+* `collectors/ssh_collector.py` (`SSHCollector`):
   * `paramiko.SSHClient` kullanarak parola veya RSA/Ed25519 özel anahtarıyla bağlanır.
-  * Eşzamanlı komut yürütme ile `ss -tulpn`, `ps -eo`, `df -h`, `docker system df -v`, `systemctl list-units`, `cat /etc/ssh/sshd_config` çıktıklarını toplar.
-* `collectors/local_collector.py` (`LocalLiveCollector`):
+  * Tek bir toplu probe betiği (`BATCH_PROBE_SCRIPT`) çalıştırır; `ss`, `ps`, `df`, `docker`, `systemctl`, `sshd_config` vb. çıktıları `===SECTION:...===` işaretleriyle ayrıştırır.
+* `collectors/base.py` (`LocalLiveCollector`):
   * Yerel işletim sistemini algılar (`platform.system()`).
-  * Linux üzerinde `/proc`, `psutil` ve `ss` kullanır; Windows 11 üzerinde `psutil`, `netstat` ve `sc query` ile donanım ve servis telemetrisi üretir.
-* `collectors/demo_collector.py` (`DemoCollector`):
+  * Yerel Linux sistemde `psutil`, `/proc` ve `ss` gibi komutlarla telemetri üretir.
+* `collectors/base.py` (`DemoCollector`, `collectors/mock_collector.py` üzerine kurulu):
   * Geliştirme, test ve sunum amaçlı gerçekçi mock veri simülatörüdür.
 
 ### B. Alan Modelleri (Domain Models - Pydantic v2)
@@ -94,18 +94,18 @@ Bütün telemetri verileri güçlü tip garantisi (`BaseModel`) ve doğrulama ku
 * `models/docker.py`: `ContainerSummary`.
 
 ### C. Arayüz ve Sunum Katmanı (Textual Reactive Engine)
-* `ui/app.py`: Ana Textual uygulaması. 1-saniye veya yapılandırılabilir aralıklarla arka planda çalışır (`set_interval`), UI thread'ini dondurmaz.
+* `ui/app.py`: Ana Textual uygulaması. 1-saniye veya yapılandırılabilir aralıklarla arka planda çalışır (`set_interval`). Not: polling şu an UI thread'inde senkron çalışır; thread worker'a taşınması [ROADMAP](plans/ROADMAP.md) Faz 2'dedir.
 * **10 Sekmeli Sekme Mimarisi (`TabbedContent`):**
-  1. `0 - Dashboard`: Donanım göstergeleri, CPU/RAM/Swap çubukları, Nginx rotaları ve kritik sistem sağlığı.
-  2. `1 - Web & Siteler`: Reverse proxy domainleri, SSL gün sayaçları, 502 Bad Gateway uyarıları.
-  3. `2 - Port Güvenliği`: Dinlenen portlar, bind IP'leri, güvenlik sınıflandırması.
-  4. `3 - Veritabanları`: Keşfedilen DB servisleri, dış ağ riskleri, bellek tüketimleri.
-  5. `4 - Servisler`: Systemd ve Windows birimleri, aktif/hatalı durumlar.
-  6. `5 - Güvenlik`: SSH sertleştirme denetimi, UFW kuralları, açık risk portları.
-  7. `6 - Yedekleme`: Systemd timer'ları, crontab işleri, snapshot durumları.
-  8. `7 - Konteynerler`: Docker konteyner durumları, port eşleşmeleri, imajlar.
-  9. `8 - Depolama & BuildKit`: Docker disk kullanımı, BuildKit önbellek şişmesi, containerd snapshot analizi.
-  10. `9 - Canlı Loglar`: HTTP erişim, hata ve sistem log akışları.
+  1. `1 - Dashboard`: Donanım göstergeleri, CPU/RAM/Swap çubukları ve sistem sağlık skoru.
+  2. `2 - Süreçler`: CPU/RAM'e göre sıralı süreçler.
+  3. `3 - Portlar`: Dinlenen portlar, bind IP'leri, güvenlik sınıflandırması.
+  4. `4 - Servisler`: Systemd birimleri, aktif/hatalı durumlar.
+  5. `5 - Veritabanı`: Keşfedilen DB servisleri, dış ağ riskleri.
+  6. `6 - Siteler`: Reverse proxy domainleri, SSL gün sayaçları, 502 Bad Gateway teşhisi.
+  7. `7 - Yedekler`: Systemd timer'ları, crontab işleri, snapshot durumları.
+  8. `8 - Loglar`: Sistem ve web log akışları.
+  9. `9 - Güvenlik`: SSH sertleştirme denetimi, güvenlik duvarı kuralları, açık risk portları.
+  10. `0 - Depolama`: Docker disk kullanımı, BuildKit önbellek şişmesi, containerd snapshot analizi.
 * **Modal Pencereler:**
   * `ConfigViewerModal` (`c` tuşu): Nginx, Docker Compose veya SSH konfigürasyonlarını sözdizimi renklendirmesiyle inceler.
   * `PortFinderModal` (`f` tuşu): Yeni servis açılmadan önce boş portları otomatik tarar ve listeler.

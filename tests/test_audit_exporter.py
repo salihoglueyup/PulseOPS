@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from collectors.base import DemoCollector
 from collectors.audit_exporter import (

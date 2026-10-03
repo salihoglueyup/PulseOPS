@@ -1,8 +1,6 @@
 import socket
-import shutil
-import subprocess
 from typing import Optional
-from models.ports import ListeningPort, PortExposure
+from models.ports import ListeningPort
 from models.docker import ContainerSummary
 from models.database import DatabaseInstance
 

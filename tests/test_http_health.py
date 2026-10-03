@@ -1,4 +1,3 @@
-import pytest
 from collectors.http_health import HTTPHealthChecker
 from models.proxy import ProxyRoute
 

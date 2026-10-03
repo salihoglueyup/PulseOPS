@@ -1,4 +1,3 @@
-from collections import deque
 from typing import Sequence
 
 BRAILLE_BARS = [" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█"]

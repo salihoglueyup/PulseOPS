@@ -1,4 +1,3 @@
-import pytest
 from models.system import CpuMetric, MemoryMetric, DiskPartition, NetworkRate, SystemSnapshot
 from models.ports import PortExposure, ListeningPort
 from models.proxy import ProxyRoute

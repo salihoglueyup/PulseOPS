@@ -1,6 +1,4 @@
-import pytest
 from collectors.ssh_collector import SSHCollector
-from models.system import SystemSnapshot
 from models.ports import PortExposure
 
 MOCK_SECTIONS = {

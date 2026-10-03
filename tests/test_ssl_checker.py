@@ -1,6 +1,5 @@
-import pytest
 from datetime import datetime, timezone, timedelta
-from collectors.ssl_checker import parse_ssl_expiry_date, SSLChecker
+from collectors.ssl_checker import parse_ssl_expiry_date
 
 def test_parse_ssl_expiry_date():
     # Example format from standard ssl.getpeercert(): "Oct 28 12:00:00 2026 GMT"

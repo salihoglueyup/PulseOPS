@@ -1,4 +1,3 @@
-import re
 import json
 import time
 from typing import Optional, Tuple

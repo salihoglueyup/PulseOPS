@@ -1,5 +1,4 @@
 import socket
-from typing import Optional
 from models.ports import ListeningPort
 
 def is_port_bindable(port: int, host: str = "127.0.0.1") -> bool:

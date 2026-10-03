@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from collectors.port_collector import PortCollector, classify_exposure
 from models.ports import PortExposure

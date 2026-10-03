@@ -2,7 +2,6 @@ import re
 import json
 import shutil
 import subprocess
-from typing import Optional
 from models.storage import StorageOverview, StorageItem, ContainerdSnapshotGroup
 
 class StorageCollector:

@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from collectors.backup_collector import BackupCollector
 from models.backup import BackupStatus

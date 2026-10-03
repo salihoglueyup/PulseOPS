@@ -1,7 +1,4 @@
-import pytest
-from models.services import ServiceUnit, ServiceState
-from models.database import DatabaseInstance
-from models.security import SSHSecurityAudit, SecurityOverview
+from models.services import ServiceState
 from models.ports import ListeningPort, PortExposure
 from models.docker import ContainerSummary
 
@@ -11,7 +8,7 @@ from collectors.security_collector import SecurityCollector
 from collectors.mock_collector import MockCollector
 from ui.widgets.dashboard_status_bar import DashboardStatusBar
 from ui.widgets.alert_ticker import AlertTicker
-from ui.modals.config_viewer_modal import ConfigViewerModal, SAMPLE_NGINX_CONF, SAMPLE_SSHD_CONF
+from ui.modals.config_viewer_modal import ConfigViewerModal
 
 def test_service_collector_parsing():
     raw_units = """

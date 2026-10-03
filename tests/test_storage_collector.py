@@ -1,7 +1,6 @@
-import pytest
 from collectors.storage_collector import StorageCollector
 from collectors.mock_collector import MockCollector
-from models.storage import StorageOverview, StorageItem
+from models.storage import StorageOverview
 from ui.widgets.storage_panel import StoragePanel
 
 TABULAR_DF_BLOATED = """

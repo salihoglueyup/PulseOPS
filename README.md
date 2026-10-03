@@ -15,7 +15,8 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Textual TUI](https://img.shields.io/badge/TUI-Textual_0.70%2B-indigo.svg)](https://textual.textualize.io/)
 [![Design](https://img.shields.io/badge/theme-Datadog_%26_JetBrains_Dark-purple.svg)](docs/ARCHITECTURE.md)
-[![Tests](https://img.shields.io/badge/tests-42%2F42_passing-brightgreen.svg)](tests/)
+[![CI](https://github.com/salihoglueyup/PulseOPS/actions/workflows/ci.yml/badge.svg)](https://github.com/salihoglueyup/PulseOPS/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/platform-Linux-orange.svg)](#-hızlı-başlangıç)
 [![Security](https://img.shields.io/badge/audit-100%25_Read--Only-success.svg)](docs/ARCHITECTURE.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -47,19 +48,24 @@ Geleneksel gözlem araçları (Datadog, Prometheus, Zabbix vb.) sunucuya kalıc�
 
 ## 🚀 Hızlı Başlangıç
 
-### 1. Gereksinimler & Kurulum
+### 1. Kurulum (Linux)
 
-Python 3.10 veya üzeri sürüm gereklidir.
+Python 3.10 veya üzeri sürüm gereklidir. Sunucuya SSH ile bağlanıp tek komutla kurun:
 
 ```bash
-# Depoyu klonlayın
-git clone https://github.com/AloGroupTR/pulseops.git
-cd pulseops
+curl -fsSL https://raw.githubusercontent.com/salihoglueyup/PulseOPS/main/install.sh | bash
+```
 
-# Sanal ortamı hazırlayın ve bağımlılıkları kurun
-python -m venv .venv
-source .venv/bin/activate  # Windows için: .venv\Scripts\activate
-pip install -e .
+Kurulumdan sonra sunucu üzerinde doğrudan `pulseops` yazmanız yeterlidir.
+
+Geliştirme için kaynak koddan kurulum:
+
+```bash
+git clone https://github.com/salihoglueyup/PulseOPS.git
+cd PulseOPS
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
 ### 2. Çalıştırma Modları
@@ -70,14 +76,14 @@ PulseOps üç esnek çalışma modunu destekler:
 # 1. Simülasyon / Demo Modu (Gerçekçi web siteleri, veritabanları ve şişmiş cache senaryoları):
 pulseops --demo
 
-# 2. Yerel Canlı Mod (Kendi Linux veya Windows 11 makinenizi canlı gözlemleyin):
+# 2. Yerel Canlı Mod (Komutu çalıştırdığınız Linux sunucusunu canlı gözlemleyin, varsayılan):
 pulseops --live
 
 # 3. Uzak SSH ile Ajansız Sunucu İzleme:
 pulseops --host 192.168.1.50 --user ubuntu --key ~/.ssh/id_rsa
 
-# Parola ile bağlanmak için:
-pulseops --host 192.168.1.50 --user root --password "GizliSifre" --port 2222
+# Parola ile bağlanmak için (anahtar verilmezse parola güvenli şekilde sorulur):
+pulseops --host 192.168.1.50 --user root --port 2222
 ```
 
 > **İpucu:** `pulseops` veya `pulsetui` komutlarının her ikisi de kullanılabilir.
@@ -93,7 +99,7 @@ PulseOps klavyedeki `1` - `0` tuşlarıyla geçiş yapılabilen 10 derinlemesine
 | **`1`** | **⚡ Dashboard** | Donanım tüketimi (CPU, RAM, Swap), disk bölümleri, disk I/O hızları, UFW durumu ve sistem sağlık skoru. |
 | **`2`** | **🔥 Süreçler (Top Processes)** | CPU ve RAM tüketimine göre canlı sıralanan süreçler, kullanıcı ve PID dökümleri. |
 | **`3`** | **🔍 Portlar (Port Exposure)** | Dinlenen portlar, bind IP adresleri (`127.0.0.1` vs `0.0.0.0`), güvenlik seviyesi ve dinamik RPC filtreleme (`p`). |
-| **`4`** | **⚙️ Servisler** | Systemd birimleri ve Windows servisleri. Aktif, pasif ve çökmüş (`failed`) servislerin anlık takibi. |
+| **`4`** | **⚙️ Servisler** | Systemd birimleri. Aktif, pasif ve çökmüş (`failed`) servislerin anlık takibi. |
 | **`5`** | **🗄️ Veritabanı** | Otomatik keşfedilen PostgreSQL, MySQL, Redis, MongoDB örnekleri ve dış ağ maruziyet durumları. |
 | **`6`** | **🌐 Siteler (Web & Proxy)** | Nginx & Docker yönlendirme haritası. Domainler, dinlenen portlar, SSL gün sayaçları, **502 Bad Gateway kök neden teşhisi** ve tarayıcıda tek tuşla açma (`Enter`). |
 | **`7`** | **💾 Yedekler** | Systemd timer'ları, crontab yedekleme görevleri (pg_dump, restic, rsync) ve saklama risk analizleri. |
@@ -148,20 +154,12 @@ Detaylı mimari şeması, veri modelleri (Pydantic v2), reactive UI yaşam döng
 
 ## 🧪 Testler ve Kalite Güvencesi
 
-PulseOps %100 test kapsamını hedefler. Tüm toplayıcılar, ayrıştırıcılar, veri modelleri, UI yaşam döngüsü ve raporlama motoru pytest ile doğrulanır:
+Tüm toplayıcılar, ayrıştırıcılar, veri modelleri, UI yaşam döngüsü ve raporlama motoru pytest ile doğrulanır. Her push ve PR'da CI; `ruff` ve Python 3.10–3.13 üzerinde test paketini çalıştırır.
 
 ```bash
-# Test paketini çalıştırın
-pytest -v
-```
-
-```text
-tests/test_audit_exporter.py::test_calculate_audit_score PASSED          [  2%]
-tests/test_audit_exporter.py::test_calculate_audit_score_clean PASSED    [  5%]
-tests/test_audit_exporter.py::test_generate_audit_markdown_comprehensive PASSED [  8%]
-tests/test_audit_exporter.py::test_export_audit_report_to_disk PASSED    [ 11%]
-...
-============================= 36 passed in 9.13s ==============================
+pip install -e ".[dev]"
+ruff check .
+pytest
 ```
 
 ---

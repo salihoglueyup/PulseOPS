@@ -2,7 +2,6 @@ import os
 import time
 import platform
 from pathlib import Path
-from typing import Optional
 import psutil
 
 from models.system import (
@@ -13,7 +12,6 @@ from models.system import (
     SystemSnapshot,
     ProcessInfo,
     DiskIoRate,
-    FirewallStatus,
 )
 from collectors.firewall_collector import FirewallCollector
 

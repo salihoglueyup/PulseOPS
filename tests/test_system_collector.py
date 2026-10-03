@@ -1,4 +1,3 @@
-import pytest
 from collectors.system_collector import SystemCollector
 from models.system import SystemSnapshot
 

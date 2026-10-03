@@ -1,4 +1,3 @@
-import pytest
 from collectors.port_finder import find_available_ports
 from models.ports import ListeningPort, PortExposure
 

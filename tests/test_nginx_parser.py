@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 from collectors.nginx_parser import NginxParser
 from models.ports import ListeningPort, PortExposure

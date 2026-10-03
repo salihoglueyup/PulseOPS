@@ -1,3 +1,4 @@
+from typing import Optional
 from pathlib import Path
 from textual.screen import ModalScreen
 from textual.app import ComposeResult

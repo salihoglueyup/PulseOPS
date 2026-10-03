@@ -1,6 +1,5 @@
 import shutil
 import subprocess
-from typing import Optional
 from models.services import ServiceUnit, ServiceState
 
 CRITICAL_SERVICES = [
