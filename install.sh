@@ -16,7 +16,12 @@ if command -v pipx &> /dev/null; then
     echo "📦 pipx bulundu, izole ortamda kuruluyor..."
     pipx install --force "git+$REPO_URL"
     pipx ensurepath
-    echo "✓ Kurulum tamamlandı! Terminalde 'pulseops' yazarak başlatabilirsiniz."
+    echo ""
+    echo "✓ Kurulum tamamlandı!"
+    echo "⚡ Mevcut terminalinizde hemen çalıştırmak için:"
+    echo "   source ~/.bashrc && pulseops"
+    echo "   (veya doğrudan: ~/.local/bin/pulseops)"
+    echo "Yeni açacağınız tüm terminallerde artık doğrudan 'pulseops' yazabilirsiniz!"
     exit 0
 fi
 
