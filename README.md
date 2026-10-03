@@ -179,7 +179,26 @@ pulseops notify --test            # her kanala deneme mesajı
 Sunucudan gelen metinler (süreç/kullanıcı adları) her kanal için kaçışlanır: Slack'te `<url|metin>`, Discord'da
 `[metin](url)` gibi sahte linklere veya `@everyone` gibi bahsetmelere dönüşemez.
 
-### 7. Yapılandırma
+### 7. Çoklu Sunucu (Filo)
+
+```toml
+[fleet]
+hosts = ["local", "web01", "deploy@10.0.0.5:2222"]   # ~/.ssh/config Host adları kullanılabilir
+groups = { web = ["web01", "web02"], db = ["db01"] }
+```
+
+```bash
+pulseops fleet                 # tüm sunucular tek ekranda: durum, skor, uyarı, CPU/RAM/disk, 24s değişiklik
+pulseops fleet --group web     # Enter: sunucunun tam TUI'si, q: filoya dönüş
+pulseops check --all           # cron/monitoring: sunucu başına bir satır + özet, en kötü durum çıkış kodu
+```
+
+Sunucular paralel ve etkileşimsiz sorgulanır (SSH anahtarı/agent gerekir; bilinmeyen host key kabul edilmez).
+Erişilemeyen sunucu `UNKNOWN` olur; erişilemez hale gelmesi ve düzelmesi de bildirim üretir. Aynı makine farklı
+yollardan (ör. `local` ve SSH) izlense bile geçmiş ve değişiklik tespiti makine kimliğiyle (`/etc/machine-id`)
+birleştirilir; değişiklikler bir kez raporlanır.
+
+### 8. Yapılandırma
 
 ```bash
 pulseops config           # geçerli ayarlar ve okunan dosyalar
@@ -212,7 +231,7 @@ Sorun giderme için log dosyası: `~/.cache/pulseops/pulseops.log`.
 
 Güvenlik ekipleri için ayrıntılı model (çalıştırılan komutlar, sudo, SSH, yazılan dosyalar): [docs/SECURITY.md](docs/SECURITY.md).
 
-### 8. Nasıl Çalışır?
+### 9. Nasıl Çalışır?
 
 Yerel modda da SSH modunda da hedef makinede aynı salt-okunur shell betiği (`sh -s`) çalışır ve çıktısı aynı kodla ayrıştırılır. Ucuz ve sık değişen metrikler (CPU, RAM, ağ, portlar, süreçler) her 2 saniyede, `systemctl`, `docker`, `nginx -T` gibi ağır kontroller 30 saniyede bir toplanır; veri toplama ayrı bir thread'de yürür, arayüz hiç beklemez. 4 çekirdekli bir sunucuda canlı modun kendi tükettiği CPU tek çekirdeğin yaklaşık %2'si kadardır (`--interval 5` ile ~%1.3).
 

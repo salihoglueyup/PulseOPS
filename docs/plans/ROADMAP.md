@@ -131,5 +131,8 @@ Bu fazda bulunan ve düzeltilen hatalar:
   akış), `pulseops history`, `check` entegrasyonu (son `check`'ten beri, WARNING'e yükseltme), cron ile sürekli gözlem
 - ✅ Bildirimler: webhook, Slack, Discord, Telegram, e-posta; yalnızca durum geçişi ve yeni değişiklikte
   (tekrar yok), kanal başına kaçışlama, `env:` sırları, `pulseops notify --test`
-- ⬜ Çoklu sunucu: `~/.ssh/config` grupları, filo görünümü, `check --all`
+- ✅ Çoklu sunucu: `[fleet]` hosts/groups, `pulseops fleet` (filo ekranı, Enter ile sunucu TUI'si),
+  `check --all/--group` (paralel, en kötü durum çıkış kodu, erişilemeyen sunucu bildirimi)
+  - Bulunan hata: aynı makine root ve normal kullanıcıyla izlendiğinde değişiklik tespiti sahte alarm
+    üretiyordu (port sahibi adı ve okunamayan `authorized_keys`); düzeltildi, regresyon testleri eklendi
 - ⬜ `.deb` / `.rpm` paketleri

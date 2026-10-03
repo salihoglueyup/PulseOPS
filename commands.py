@@ -18,6 +18,7 @@ from collectors.audit_exporter import calculate_audit_score, generate_audit_mark
 from models.telemetry import Telemetry
 from models.services import ServiceState
 from logging_setup import get_logger
+from version import __version__
 from pulseops_config import Config, ConfigError, init_user_config, render_config, user_config_path, SYSTEM_CONFIG
 
 # Nagios / monitoring plugin compatible exit codes
@@ -527,6 +528,93 @@ def cmd_notify(args: argparse.Namespace) -> int:
     return EXIT_WARNING if errors else EXIT_OK
 
 
+def terminal_supports_unicode() -> bool:
+    encoding = (getattr(sys.stdout, "encoding", None) or "").lower().replace("-", "")
+    return encoding.startswith("utf")
+
+
+def _tui_options(args: argparse.Namespace, config: Config) -> dict:
+    general = config.general
+    interval = getattr(args, "interval", None)
+    slow = getattr(args, "slow_interval", None)
+    return {
+        "interval": max(interval if interval is not None else general.interval, 0.5),
+        "slow_interval": slow if slow is not None else general.slow_interval,
+        "no_color": bool(getattr(args, "no_color", None)) or general.no_color,
+        "ascii": bool(getattr(args, "ascii", None)) or general.ascii or not terminal_supports_unicode(),
+        "mouse": general.mouse and not getattr(args, "no_mouse", None),
+    }
+
+
+def launch_tui(args: argparse.Namespace, config: Config, collector, log_path=None, config_files=()) -> int:
+    """Runs the single-host TUI for an already connected collector."""
+    from ui.app import ServerTUIApp
+
+    opts = _tui_options(args, config)
+    if opts["no_color"]:
+        os.environ["NO_COLOR"] = "1"  # read by Textual when the App is constructed
+    get_logger("cli").info("PulseOps %s başlatıldı (%s), aralık %.1fs / %.0fs, yapılandırma: %s",
+                           __version__, type(collector).__name__, opts["interval"],
+                           opts["slow_interval"], ", ".join(map(str, config_files)) or "varsayılan")
+    history = None
+    if config.history.enabled and not isinstance(collector, DemoCollector):
+        from history import HistoryStore
+        history = HistoryStore()
+    app = ServerTUIApp(
+        history=history,
+        collector=collector,
+        poll_interval=opts["interval"],
+        slow_interval=opts["slow_interval"],
+        ascii_mode=opts["ascii"],
+        alert_thresholds=config.alerts,
+    )
+    app.run(mouse=opts["mouse"])
+    if app.return_code not in (None, 0) and log_path:
+        print(f"PulseOps beklenmedik şekilde kapandı. Ayrıntılar: {log_path}", file=sys.stderr)
+    return app.return_code or 0
+
+
+def cmd_fleet(args: argparse.Namespace) -> int:
+    """Fleet overview; Enter opens a host's full TUI, quitting it returns to the fleet."""
+    from ui.fleet_app import FleetApp
+
+    config = _config(args)
+    try:
+        targets = fleet_targets(config, args.group)
+    except CollectorError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return EXIT_UNKNOWN
+    if not targets:
+        print("Filoda sunucu yok. Yapılandırmaya ekleyin (pulseops config):\n\n"
+              "[fleet]\nhosts = [\"local\", \"web01\", \"deploy@10.0.0.5\"]\ngroups = { web = [\"web01\"] }",
+              file=sys.stderr)
+        return EXIT_UNKNOWN
+
+    history = None
+    if config.history.enabled:
+        from history import HistoryStore
+        history = HistoryStore()
+
+    def connect(target: str):
+        return make_collector(_target_args(args, target), interactive=False)
+
+    opts = _tui_options(args, config)
+    while True:
+        fleet = FleetApp(targets, connect, config, history=history, ascii_mode=opts["ascii"],
+                         interval=max(opts["interval"] * 5, 10.0))
+        chosen = fleet.run(mouse=opts["mouse"])
+        if not chosen:
+            return EXIT_OK
+        one = _target_args(args, chosen)
+        try:
+            collector = make_collector(one, interactive=True)
+        except CollectorError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            input("Filoya dönmek için Enter...")
+            continue
+        launch_tui(one, config, collector, config_files=getattr(args, "config_files", ()))
+
+
 def _parse_since(value: str) -> float:
     import re
     import time
@@ -630,6 +718,14 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     p_history.add_argument("--json", action="store_true", help="JSON çıktı")
     p_history.set_defaults(func=cmd_history)
 
+    p_fleet = sub.add_parser("fleet", help="Filo görünümü: [fleet] içindeki tüm sunucular tek ekranda")
+    p_fleet.add_argument("--group", default=None, help="Yalnızca bu grup")
+    p_fleet.add_argument("--ascii", action="store_true", default=None, help=argparse.SUPPRESS)
+    p_fleet.add_argument("--no-mouse", action="store_true", default=None, help=argparse.SUPPRESS)
+    for name in ("user", "port", "key", "jump", "host", "target", "password"):
+        p_fleet.set_defaults(**{name: None})
+    p_fleet.set_defaults(func=cmd_fleet, demo=False, live=False)
+
     p_notify = sub.add_parser("notify", help="Bildirim kanallarına deneme mesajı gönderir")
     p_notify.add_argument("--test", action="store_true", required=True, help="Her kanala deneme mesajı gönder")
     p_notify.set_defaults(func=cmd_notify)
@@ -646,7 +742,7 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     return parser
 
 
-SUBCOMMANDS = ("status", "report", "check", "history", "notify", "config", "probe", "update", "uninstall", "version")
+SUBCOMMANDS = ("status", "report", "check", "fleet", "history", "notify", "config", "probe", "update", "uninstall", "version")
 
 
 def cmd_probe(args: argparse.Namespace) -> int:
