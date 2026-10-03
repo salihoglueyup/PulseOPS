@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
-from rich.table import Table
+from rich.markup import escape
+
+from ui.safe import PlainTable
 
 from collectors.base import BaseCollector, DemoCollector, create_local_collector
 from collectors.telemetry import collect_telemetry, summarize_alerts
@@ -97,7 +99,11 @@ def build_collector(args: argparse.Namespace, interactive: bool = True) -> BaseC
     config = _config(args)
     use_sudo = config.general.use_sudo
     if not destination:
-        return DemoCollector() if args.demo else create_local_collector(use_sudo=use_sudo)
+        if args.demo:
+            return DemoCollector()
+        collector = create_local_collector(use_sudo=use_sudo)
+        collector.failed_login_threshold = config.alerts.ssh_failed_logins
+        return collector
 
     from collectors.ssh_collector import SSHCollector
     from collectors.transport import SSHTransport, TransportError, resolve_target
@@ -145,7 +151,9 @@ def build_collector(args: argparse.Namespace, interactive: bool = True) -> BaseC
         _fail("Kimlik doğrulaması tamamlanamadı.")
 
     transport.disable_prompts()
-    return SSHCollector(transport, use_sudo=use_sudo)
+    collector = SSHCollector(transport, use_sudo=use_sudo)
+    collector.failed_login_threshold = config.alerts.ssh_failed_logins
+    return collector
 
 
 def _score(t: Telemetry) -> tuple[int, str]:
@@ -174,15 +182,17 @@ def _collect_or_exit(collector: BaseCollector) -> Telemetry:
 
 
 def render_status(t: Telemetry, console: Console, config: Optional[Config] = None) -> None:
+    """Plain-text status. Every telemetry value is escaped: hostnames, mounts and alerts come from the host."""
     s = t.snapshot
     score, grade = _score(t)
     alerts = summarize_alerts(t, (config or Config()).alerts)
 
-    console.print(f"[bold]⚡ PulseOps[/bold]  {s.hostname}  ·  {s.os_name}  ·  çekirdek {s.kernel}  ·  uptime {s.uptime_human}")
-    console.print(f"[bold]Sağlık skoru:[/bold] {score}/100  {grade}")
+    console.print(f"[bold]⚡ PulseOps[/bold]  {escape(s.hostname)}  ·  {escape(s.os_name)}  ·  "
+                  f"çekirdek {escape(s.kernel)}  ·  uptime {s.uptime_human}")
+    console.print(f"[bold]Sağlık skoru:[/bold] {score}/100  {escape(grade)}")
     console.print()
 
-    vitals = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    vitals = PlainTable(show_header=True, header_style="bold", box=None, pad_edge=False)
     vitals.add_column("Kaynak")
     vitals.add_column("Kullanım", justify="right")
     vitals.add_column("Detay")
@@ -200,21 +210,28 @@ def render_status(t: Telemetry, console: Console, config: Optional[Config] = Non
         f"Portlar: {len(t.ports)}  ·  Siteler: {len(t.routes)}  ·  Konteynerler: {len(t.containers)}  ·  "
         f"Veritabanları: {len(t.databases)}  ·  Servisler: {len(t.services)} ({len(failed_services)} hatalı)"
     )
-    console.print(f"Güvenlik duvarı: {s.firewall.summary}")
+    console.print(f"Güvenlik duvarı: {s.firewall.summary}", markup=False)
+    sec = t.security
+    f2b = ("kurulu değil" if not sec.fail2ban.installed else
+           "durum okunamadı" if not sec.fail2ban.known else
+           "ÇALIŞMIYOR" if sec.fail2ban.running is False else f"aktif, {sec.fail2ban.currently_banned} IP engelli")
+    auth = (f"{sec.auth.failed_total} başarısız / {sec.auth.accepted} başarılı ({sec.auth.window})"
+            if sec.auth.known else "okunamadı")
+    console.print(f"SSH girişleri: {auth}  ·  fail2ban: {f2b}", markup=False)
     console.print()
 
     limitations = t.privileges.limitations
     if limitations:
-        console.print(f"[bold yellow]Kısıtlı erişim ({t.privileges.user}):[/bold yellow]")
+        console.print(f"[bold yellow]Kısıtlı erişim ({escape(t.privileges.user)}):[/bold yellow]")
         for item in limitations:
-            console.print(f"  • {item}")
-        console.print(f"  {t.privileges.hint}")
+            console.print(f"  • {item}", markup=False)
+        console.print(f"  {t.privileges.hint}", markup=False)
         console.print()
 
     if alerts:
         console.print(f"[bold red]Uyarılar ({len(alerts)}):[/bold red]")
         for a in alerts:
-            console.print(f"  • {a}")
+            console.print(f"  • {a}", markup=False)
     else:
         console.print("[bold green]Aktif uyarı yok.[/bold green]")
 
@@ -308,12 +325,31 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     p_config.add_argument("--force", action="store_true", help="--init ile var olan dosyanın üzerine yazar")
     p_config.set_defaults(func=cmd_config)
 
+    p_probe = sub.add_parser("probe", help="Sunucuda çalıştırılan salt-okunur betiği gösterir (denetim için)")
+    p_probe.add_argument("--tier", choices=["fast", "slow", "logs", "all"], default="all",
+                         help="fast: her 2 sn, slow: her 30 sn, logs: Loglar sekmesi açıkken (varsayılan: all)")
+    p_probe.add_argument("--sudo", choices=["auto", "on", "off"], default="auto",
+                         help="auto: ilk turdaki gibi `sudo -n true` ile tespit (varsayılan)")
+    p_probe.set_defaults(func=cmd_probe)
+
     from installer import add_installer_subcommands
     add_installer_subcommands(sub)
     return parser
 
 
-SUBCOMMANDS = ("status", "report", "check", "config", "update", "uninstall", "version")
+SUBCOMMANDS = ("status", "report", "check", "config", "probe", "update", "uninstall", "version")
+
+
+def cmd_probe(args: argparse.Namespace) -> int:
+    """Prints the exact read-only shell script PulseOps runs on a host, for review by auditors."""
+    from collectors.probe import build_script
+
+    tiers = {"fast": dict(fast=True), "slow": dict(fast=False, slow=True), "logs": dict(fast=False, logs=True),
+             "all": dict(fast=True, slow=True, logs=True)}[args.tier]
+    sudo = None if args.sudo == "auto" else args.sudo == "on"
+    script, nonce = build_script(**tiers, sudo=sudo)
+    print(script.replace(nonce, "<nonce>"), end="")
+    return EXIT_OK
 
 
 def cmd_config(args: argparse.Namespace) -> int:

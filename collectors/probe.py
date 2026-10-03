@@ -68,6 +68,45 @@ BASELINE_SECTIONS = [
     ("BASELINE_SLEEP", "sleep 0.5"),
 ]
 
+# Summarises sshd authentication events into counts and top-10 lists inside the host, so a server
+# under a brute-force storm sends a few hundred bytes instead of megabytes of log lines.
+AUTH_AWK = (
+    "awk '"
+    # timestamp: journal short-unix (epoch), RFC 3339, or classic syslog (\"Oct  3 19:00:00\")
+    "function ts() { if ($1 ~ /^[0-9]+[.][0-9]+$/ || $1 ~ /^[0-9][0-9][0-9][0-9]-/) return $1;"
+    " if ($1 ~ /^[A-Z][a-z][a-z]$/) return $1 \"_\" $2 \"_\" $3; return \"-\" }"
+    " /Accepted [a-z/-]+ for / { for (i = 1; i <= NF; i++) if ($i == \"Accepted\") { m = $(i+1); u = $(i+3); ip = $(i+5) }"
+    " acc++; if (m == \"password\" || m ~ /^keyboard-interactive/) accpw++;"
+    " recent[acc % 10] = ts() \" \" m \" \" u \" \" ip; next }"
+    # an invalid user is counted once, on its \"Invalid user\" line
+    " /Failed [a-z/-]+ for invalid user / { next }"
+    " /Failed [a-z/-]+ for / { ip = \"\"; u = \"\";"
+    " for (i = 1; i <= NF; i++) { if ($i == \"from\") { ip = $(i+1); seen[ip \":\" $(i+3)] = 1 } if ($i == \"for\") u = $(i+1) }"
+    " fail++; fip[ip]++; fuser[u]++; next }"
+    # key-only servers: a rejected key shows up as a pre-auth disconnect of an authenticating user
+    # (only when that connection logged no \"Failed\" line, which sshd also writes for passwords)
+    " /(Connection closed by|Disconnected from) authenticating user / { ip = \"\"; u = \"\"; port = \"\";"
+    " for (i = 1; i <= NF; i++) if ($i == \"authenticating\" && $(i+1) == \"user\") { u = $(i+2); ip = $(i+3); port = $(i+5) }"
+    " if ((ip \":\" port) in seen) next; fail++; fip[ip]++; fuser[u]++; next }"
+    " /Invalid user / { ip = \"\"; u = \"\";"
+    " for (i = 1; i <= NF; i++) { if ($i == \"from\") ip = $(i+1); if ($i == \"user\" && $(i-1) == \"Invalid\") u = $(i+1) }"
+    " inv++; fip[ip]++; fuser[u]++; next }"
+    " END { print \"FAILED\", fail + 0; print \"INVALID\", inv + 0; print \"ACCEPTED\", acc + 0; print \"ACCEPTED_PASSWORD\", accpw + 0;"
+    " for (k in fip) if (k != \"\") print \"FIP\", fip[k], k | \"sort -k2,2nr | head -n 10\"; close(\"sort -k2,2nr | head -n 10\");"
+    " for (k in fuser) if (k != \"\") print \"FUSER\", fuser[k], k | \"sort -k2,2nr | head -n 10\"; close(\"sort -k2,2nr | head -n 10\");"
+    " n = acc < 10 ? acc : 10; for (j = 0; j < n; j++) print \"ACC\", recent[(acc - n + j + 1) % 10] }'"
+)
+
+# One `priv sh -c` for everything that needs root here: a single sudo call (and auth-log entry)
+ACCESS_PRIV_SCRIPT = (
+    "echo '#SUDOERS'; cat /etc/sudoers /etc/sudoers.d/* 2>/dev/null | grep -v '^[[:space:]]*#'"
+    " | grep NOPASSWD | head -n 20 || true; [ -r /etc/sudoers ] || echo UNKNOWN;"
+    " echo '#AUTHKEYS';"
+    " awk -F: '$7 !~ /(nologin|false|sync|shutdown|halt)$/ {print $1, $6}' /etc/passwd | while read -r u h; do"
+    " f=\"$h/.ssh/authorized_keys\"; [ -f \"$f\" ] || continue;"
+    " if [ -r \"$f\" ]; then echo \"$u $(grep -cvE '^[[:space:]]*(#|$)' \"$f\")\"; else echo \"$u ?\"; fi; done"
+)
+
 SEARCH_ROOTS = "/var/backups /var/www /opt /srv /home /root ."
 
 SLOW_SECTIONS = [
@@ -127,6 +166,38 @@ SLOW_SECTIONS = [
         " | grep -E '^(port|permitrootlogin|passwordauthentication|pubkeyauthentication|kbdinteractiveauthentication|permitemptypasswords) ';"
         " else { priv sh -c 'cat /etc/ssh/sshd_config.d/*.conf /etc/ssh/sshd_config' || echo UNREADABLE; }"
         " | grep -v '^[[:space:]]*#' | grep -v '^[[:space:]]*$' | head -n 200; fi; fi",
+    ),
+    (
+        "FAIL2BAN",
+        "if command -v fail2ban-client >/dev/null; then echo INSTALLED;"
+        " if command -v pgrep >/dev/null; then pgrep -x fail2ban-server >/dev/null && echo RUNNING || echo STOPPED; fi;"
+        " out=$(priv fail2ban-client status 2>&1);"
+        " case $out in *'Jail list'*)"
+        " printf '%s\\n' \"$out\";"
+        " for j in $(printf '%s\\n' \"$out\" | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' ' '); do"
+        " echo \"#JAIL $j\"; priv fail2ban-client status \"$j\"; done;;"
+        " *) echo UNKNOWN;; esac; fi",
+    ),
+    (
+        # journald when it runs (then sshd logs there); otherwise the classic auth log files.
+        # Without root/sudo/journal group a user only sees their own journal entries: report UNKNOWN
+        # instead of a misleading zero.
+        "AUTH",
+        "if [ -d /run/systemd/journal ]; then"
+        " if [ \"$(id -u)\" = 0 ] || [ -n \"$S\" ] || id -Gn | grep -qwE 'systemd-journal|adm|wheel'; then"
+        " echo 'SOURCE journal';"
+        " priv journalctl _COMM=sshd _COMM=sshd-session --since '24 hours ago' --no-pager -o short-unix | " + AUTH_AWK + ";"
+        " else echo UNKNOWN; fi;"
+        " else found=; for f in /var/log/auth.log /var/log/secure; do [ -e \"$f\" ] || continue; found=1;"
+        " if [ -r \"$f\" ] || [ -n \"$S\" ]; then echo \"SOURCE $f\"; priv tail -n 20000 \"$f\" | " + AUTH_AWK + ";"
+        " else echo UNKNOWN; fi; break; done; [ -n \"$found\" ] || echo 'SOURCE none'; fi",
+    ),
+    (
+        "ACCESS",
+        "echo '#UID0'; awk -F: '$3 == 0 {print $1}' /etc/passwd;"
+        " echo '#ADMINS'; for g in sudo wheel admin; do getent group \"$g\" 2>/dev/null || grep \"^$g:\" /etc/group; done;"
+        " echo '#LOGIN'; awk -F: '$7 !~ /(nologin|false|sync|shutdown|halt)$/ {print $1}' /etc/passwd;"
+        " priv sh -c \"" + ACCESS_PRIV_SCRIPT.replace('"', '\\"').replace("$", "\\$") + "\"",
     ),
     (
         "PRIV",

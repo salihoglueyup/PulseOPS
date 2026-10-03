@@ -13,10 +13,13 @@ __all__ = ["PlainTable", "escape"]
 
 
 class PlainTable(Table):
-    """A Rich Table whose plain-string cells are shown literally instead of parsed as markup.
+    """A Rich Table whose plain-string cells and column headers are shown literally, never parsed as markup.
 
     Styling still works through `Text` cells and column/row styles.
     """
+
+    def add_column(self, header="", *args, **kwargs):
+        return super().add_column(Text(header) if isinstance(header, str) else header, *args, **kwargs)
 
     def add_row(self, *renderables, **kwargs):
         cells = [Text(cell) if isinstance(cell, str) else cell for cell in renderables]

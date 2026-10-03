@@ -381,3 +381,38 @@ def test_rare_sections_are_skipped_while_cached():
     c.collect(include_slow=True)
     c.collect(include_slow=True)
     assert ":UNIT_FILES===" in host.scripts[0] and ":UNIT_FILES===" not in host.scripts[1]
+
+
+# Commands/arguments that would change the host. The probe must never contain any of them.
+WRITE_PATTERNS = [
+    r"\brm\b", r"\bmv\b", r"\bcp\b", r"\btee\b", r"\bdd\b", r"\btruncate\b", r"\bchmod\b", r"\bchown\b",
+    r"\bmkdir\b", r"\btouch\b", r"\bln\b", r"\bkill\b", r"\bpkill\b", r"\bkillall\b", r"(?<!\|)\breboot\b(?!\|)", r"(?<!\|)\bshutdown\b(?!\|)",
+    r"sed\s+-i", r"\bsystemctl\s+(start|stop|restart|reload|enable|disable|mask|kill)\b",
+    r"\bdocker\s+(rm|rmi|stop|start|restart|kill|run|exec|prune|system\s+prune|builder\s+prune|volume\s+rm)\b",
+    r"\bufw\s+(enable|disable|allow|deny|reject|limit|delete|reset|insert)\b",
+    r"\biptables\s+-[ADIRFNXZP]\b", r"\bnft\s+(add|delete|flush|insert|replace|create)\b",
+    r"\bfail2ban-client\s+(set|unban|ban|stop|start|reload|restart)\b", r"\bcrontab\s+-[re]\b",
+    r"\bjournalctl\s+--(vacuum|rotate|flush)", r"\bfirewall-cmd\s+--(add|remove|reload|set)", r"\bnginx\s+-s\b",
+]
+
+
+def test_probe_is_read_only():
+    script, _ = build_script(fast=True, slow=True, logs=True, baseline=True, sudo=True)
+    body = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    for pattern in WRITE_PATTERNS:
+        assert not re.search(pattern, body), f"probe contains a modifying command: {pattern}"
+    # Shell output redirections may only discard (>/dev/null, 2>/dev/null, >&2-style dups)
+    shell_only = re.sub(r"'[^']*'", "''", body)
+    for target in re.findall(r"(?<![<>&|])(?:\d?>>?)\s*([^\s;|&)]+)", shell_only):
+        assert target == "/dev/null" or target.startswith("&"), f"probe writes to {target}"
+    # Quoted programs (awk) must not write files or run commands other than the sort|head pipe
+    for program in re.findall(r"'([^']*)'", body):
+        assert not re.search(r'print[^;}]*>\s*"', program), f"awk writes a file: {program[:80]}"
+        assert "system(" not in program and "getline" not in program
+
+
+def test_fast_tier_never_uses_sudo():
+    for sudo in (None, True, False):
+        script, _ = build_script(fast=True, baseline=True, sudo=sudo)
+        body = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
+        assert "sudo" not in body.split('S=""', 1)[1]

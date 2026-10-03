@@ -392,8 +392,30 @@ class MockCollector:
         ]
 
     def get_security(self):
-        from models.security import SecurityOverview, SSHSecurityAudit
+        from models.security import (
+            AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, LoginEvent,
+            SecurityOverview, SSHSecurityAudit,
+        )
         return SecurityOverview(
+            fail2ban=Fail2banStatus(installed=True, running=True, jails=[
+                Fail2banJail(name="sshd", currently_failed=4, currently_banned=3, total_banned=41,
+                             banned_ips=["203.0.113.45", "198.51.100.23", "192.0.2.77"]),
+                Fail2banJail(name="nginx-http-auth", currently_banned=0, total_banned=2),
+            ]),
+            auth=AuthActivity(
+                known=True, source="journal", window="son 24 saat", failed=388, invalid_user=124,
+                accepted=6, accepted_password=0,
+                top_sources=[CountedItem(value="203.0.113.45", count=211), CountedItem(value="198.51.100.23", count=97),
+                             CountedItem(value="192.0.2.77", count=64)],
+                top_users=[CountedItem(value="root", count=240), CountedItem(value="admin", count=58)],
+                recent_accepted=[
+                    LoginEvent(time="2026-10-03 08:12", method="publickey", user="deploy", source="10.0.0.12"),
+                    LoginEvent(time="2026-10-03 13:47", method="publickey", user="deploy", source="10.0.0.12"),
+                ],
+            ),
+            access=AccessAudit(uid0_users=["root"], admin_users=["deploy"], login_users=["root", "deploy"],
+                               sudoers_known=True, nopasswd_rules=[], keys_known=True,
+                               authorized_keys={"deploy": 2, "root": 0}),
             ssh=SSHSecurityAudit(port=22, permit_root_login="no", password_authentication="no", pubkey_authentication="yes"),
             firewall_name="UFW",
             firewall_active=True,
@@ -402,6 +424,7 @@ class MockCollector:
             exposed_risky_ports=[],
             overall_status="GÜVENLİ ✓",
             recommendations=[
+                "[BILGI] SSH: 512 basarisiz deneme (son 24 saat); fail2ban su an 3 IP'yi engelliyor.",
                 "✓ Root login kapalı (PermitRootLogin no)",
                 "✓ Şifreli SSH girişi kapalı, yalnızca anahtar doğrulaması aktif",
                 "✓ UFW güvenlik duvarı aktif ve 8 kural devrede",

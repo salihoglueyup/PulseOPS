@@ -6,6 +6,12 @@ from rich.text import Text
 
 from models.security import SecurityOverview
 
+DIM = "#8b949e"
+GOOD = "bold #3fb950"
+WARN = "bold #d29922"
+BAD = "bold #f85149"
+
+
 class SecurityPanel(Widget):
     """Widget displaying server security visibility, SSH posture, and firewall status in Clean Minimalist Silver & White."""
 
@@ -68,6 +74,7 @@ class SecurityPanel(Widget):
 
         cards_table.add_row(ssh_text, fw_text, port_text, badge)
         grid.add_row(Panel(cards_table, border_style="#30363d", padding=(0, 1)))
+        grid.add_row(self._render_soc(sec))
 
         # Bottom recommendations list
         rec_table = Table(expand=True, box=None, padding=(0, 1))
@@ -97,3 +104,74 @@ class SecurityPanel(Widget):
             border_style="#30363d",
             padding=(0, 0),
         )
+
+    def _render_soc(self, sec: SecurityOverview) -> Panel:
+        f2b, auth, access = sec.fail2ban, sec.auth, sec.access
+        cards = Table(expand=True, box=None, padding=(0, 2))
+        cards.add_column("FAIL2BAN", style="bold #f0f6fc", ratio=1)
+        cards.add_column(Text(f"SSH GİRİŞLERİ ({auth.window or '-'})".upper()), style="bold #f0f6fc", ratio=1)
+        cards.add_column("YETKİLİ HESAPLAR", style="bold #f0f6fc", ratio=1)
+
+        f2b_text = Text()
+        if not f2b.installed:
+            f2b_text.append("Kurulu değil\n", style=WARN)
+            f2b_text.append("SSH kaba kuvvet koruması yok", style=DIM)
+        elif not f2b.known:
+            f2b_text.append("Kurulu, durum okunamadı\n", style=WARN)
+            f2b_text.append("Okumak için root gerekli", style=DIM)
+        elif f2b.running is False:
+            f2b_text.append("ÇALIŞMIYOR ✗", style=BAD)
+        else:
+            f2b_text.append(f"Aktif ✓  {len(f2b.jails)} jail\n", style=GOOD)
+            f2b_text.append(f"Şu an engelli IP: {f2b.currently_banned}\n", style="#f0f6fc")
+            f2b_text.append("SSH korunuyor ✓" if f2b.protecting_ssh else "sshd jail'i yok!", style=GOOD if f2b.protecting_ssh else WARN)
+
+        auth_text = Text()
+        if not auth.known:
+            auth_text.append("Okunamadı\n", style=WARN)
+            auth_text.append("root / sudo / systemd-journal grubu gerekli", style=DIM)
+        else:
+            auth_text.append(f"Başarısız: {auth.failed}  Geçersiz kullanıcı: {auth.invalid_user}\n",
+                             style=BAD if auth.failed_total >= 100 and not f2b.protecting_ssh else "#f0f6fc")
+            auth_text.append(f"Başarılı: {auth.accepted}", style="#f0f6fc")
+            if auth.accepted_password:
+                auth_text.append(f"  (şifreyle: {auth.accepted_password})", style=WARN)
+            auth_text.append(f"\nKaynak: {auth.source}", style=DIM)
+
+        acc_text = Text()
+        if access.extra_uid0:
+            acc_text.append(f"UID 0: {', '.join(access.extra_uid0)} ⚠\n", style=BAD)
+        acc_text.append(f"sudo/wheel: {', '.join(access.admin_users) or '-'}\n", style="#f0f6fc")
+        acc_text.append(f"Giriş yapabilen: {len(access.login_users)} hesap\n", style=DIM)
+        if not access.sudoers_known:
+            acc_text.append("NOPASSWD: bilinmiyor (root gerekli)", style=DIM)
+        elif access.nopasswd_rules:
+            acc_text.append(f"NOPASSWD kuralı: {len(access.nopasswd_rules)}", style=WARN)
+        else:
+            acc_text.append("NOPASSWD kuralı yok ✓", style=GOOD)
+        cards.add_row(f2b_text, auth_text, acc_text)
+
+        details = Table(expand=True, box=None, padding=(0, 2))
+        details.add_column("EN ÇOK DENEYEN KAYNAKLAR", style="#f0f6fc", ratio=1)
+        details.add_column("SON BAŞARILI GİRİŞLER", style="#f0f6fc", ratio=2)
+        details.add_column("AUTHORIZED_KEYS", style="#f0f6fc", ratio=1)
+        sources = Text("\n").join(
+            Text(f"{item.value}  ×{item.count}", style="#f0f6fc") for item in auth.top_sources[:5]
+        ) if auth.top_sources else Text("-", style=DIM)
+        logins = Text("\n").join(
+            Text(f"{e.time}  {e.user} ← {e.source}  [{e.method}]",
+                 style=WARN if e.method == "password" else "#f0f6fc")
+            for e in reversed(auth.recent_accepted[-5:])
+        ) if auth.recent_accepted else Text("-", style=DIM)
+        keys = Text("\n").join(
+            Text(f"{user}: {count} anahtar", style="#f0f6fc") for user, count in sorted(access.authorized_keys.items())
+        ) if access.authorized_keys else Text("bilinmiyor" if not access.keys_known else "-", style=DIM)
+        details.add_row(sources, logins, keys)
+
+        grid = Table.grid(expand=True)
+        grid.add_column()
+        grid.add_row(cards)
+        grid.add_row(Text(""))
+        grid.add_row(details)
+        return Panel(grid, title="[bold #f0f6fc]ERİŞİM & SALDIRI GÖRÜNÜRLÜĞÜ (SOC)[/bold #f0f6fc]",
+                     border_style="#30363d", padding=(0, 1))

@@ -11,6 +11,53 @@ from models.services import ServiceUnit, ServiceState
 from models.security import SecurityOverview
 from models.storage import StorageOverview
 
+def _md(value) -> str:
+    """Telemetry text inside Markdown tables/code spans: neutralize table and code delimiters."""
+    return str(value).replace("|", "¦").replace("`", "'").replace("\n", " ")
+
+
+def _soc_section(security: SecurityOverview) -> list[str]:
+    f2b, auth, access = security.fail2ban, security.auth, security.access
+    lines = ["", "### Erişim & Saldırı Görünürlüğü (SOC)"]
+    if not f2b.installed:
+        lines.append("* **fail2ban:** Kurulu değil ⚠️")
+    elif not f2b.known:
+        lines.append("* **fail2ban:** Kurulu, durum okunamadı (root gerekli)")
+    elif f2b.running is False:
+        lines.append("* **fail2ban:** Kurulu ama ÇALIŞMIYOR 🚨")
+    else:
+        jails = ", ".join(f"`{_md(j.name)}` ({j.currently_banned} engelli / {j.total_banned} toplam)" for j in f2b.jails)
+        lines.append(f"* **fail2ban:** Aktif ✓ — {jails or 'jail yok'}")
+
+    if auth.known:
+        lines.append(
+            f"* **SSH girişleri ({_md(auth.window)}, kaynak `{_md(auth.source)}`):** {auth.failed} başarısız, "
+            f"{auth.invalid_user} geçersiz kullanıcı, {auth.accepted} başarılı ({auth.accepted_password} şifreyle)"
+        )
+        if auth.top_sources:
+            lines += ["", "| En çok deneyen kaynak | Deneme |", "| :--- | ---: |"]
+            lines += [f"| `{_md(i.value)}` | {i.count} |" for i in auth.top_sources]
+        if auth.recent_accepted:
+            lines += ["", "| Son başarılı giriş | Kullanıcı | Kaynak | Yöntem |", "| :--- | :--- | :--- | :--- |"]
+            lines += [f"| {_md(e.time)} | `{_md(e.user)}` | `{_md(e.source)}` | {_md(e.method)} |"
+                      for e in reversed(auth.recent_accepted)]
+    else:
+        lines.append("* **SSH girişleri:** Okunamadı (root, sudo veya systemd-journal grubu gerekli)")
+
+    lines.append(f"* **UID 0 hesaplar:** {', '.join(f'`{_md(u)}`' for u in access.uid0_users) or '-'}"
+                 + (" 🚨 root dışı UID 0 hesap var!" if access.extra_uid0 else ""))
+    lines.append(f"* **sudo/wheel üyeleri:** {', '.join(f'`{_md(u)}`' for u in access.admin_users) or '-'}")
+    if access.sudoers_known:
+        lines.append(f"* **NOPASSWD kuralları:** {len(access.nopasswd_rules)}")
+        lines += [f"  * `{_md(rule)}`" for rule in access.nopasswd_rules]
+    else:
+        lines.append("* **NOPASSWD kuralları:** Okunamadı (root gerekli)")
+    if access.authorized_keys:
+        keys = ", ".join(f"`{_md(u)}`: {n}" for u, n in sorted(access.authorized_keys.items()))
+        lines.append(f"* **authorized_keys:** {keys}")
+    return lines
+
+
 def calculate_audit_score(
     snapshot: SystemSnapshot,
     ports: list[ListeningPort],
@@ -32,6 +79,14 @@ def calculate_audit_score(
 
     # SSH PermitRootLogin (-10)
     if security and security.ssh.permit_root_login == "yes":
+        score -= 10
+
+    # Root-equivalent accounts other than root (-20 each): backdoor indicator
+    if security:
+        score -= 20 * len(security.access.extra_uid0)
+
+    # SSH brute force without fail2ban protection (-10)
+    if security and security.auth.known and security.auth.failed_total >= 100 and not security.fail2ban.protecting_ssh:
         score -= 10
 
     # 502 / 504 Bad Gateway routes (-10 each)
@@ -191,6 +246,7 @@ def generate_audit_markdown(
             f"* **SSH Anahtarı Doğrulaması (PubkeyAuthentication):** `{security.ssh.pubkey_authentication}`",
             f"* **SSH Genel Sertleştirme Puanı:** {'SERTLEŞTİRİLMİŞ ✓' if security.ssh.is_hardened else 'İYİLEŞTİRME GEREKİR ⚠️'}",
         ])
+        md.extend(_soc_section(security))
 
     # 7. Backup Systems
     md.extend([

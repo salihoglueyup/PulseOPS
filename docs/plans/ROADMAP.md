@@ -95,17 +95,31 @@ Bu fazda bulunan ve düzeltilen hatalar:
 - Yerel modda nginx access log her turda baştan sona okunuyordu (GB'larca log dosyasında ciddi yük)
 - `ss`/`netstat` olmayan sistemlerde port listesi boş kalıyordu (`/proc/net` yedeği eklendi)
 
-## Faz 3 — Güvenlik
+## Faz 3 — Güvenlik ✅
 
 Amaç: Bir güvenlik/gözlem aracının kendisi güvenli olsun; güvenlik paneli SOC için değerli veri sunsun.
 
-- ⬜ SSH host key doğrulaması (`known_hosts`), bilinmeyen anahtarda fingerprint onayı
-  (`AutoAddPolicy` kaldırılacak — `collectors/transport.py`)
-- ⬜ `~/.ssh/config`, ssh-agent ve ProxyJump desteği
-- ⬜ Şifrenin CLI argümanından kaldırılması (`PULSEOPS_SSH_PASSWORD` veya prompt)
-- ⬜ fail2ban durumu, son başarısız SSH girişleri, sudoers / yetkili kullanıcı denetimi
-- 🚧 Salt-okunur garantisinin dokümantasyonu (sudo davranışı Faz 2'de belgelendi; çalıştırılan
-  komutların tam listesi eklenecek)
+- ✅ SSH host key doğrulaması (`known_hosts` + `/etc/ssh/ssh_known_hosts`): değişen anahtar her zaman
+  reddedilir, bilinmeyen anahtarda SHA256 parmak izi onayı; `check`/cron bilinmeyen anahtarı asla kabul
+  etmez; `[ssh] host_key_checking = ask | accept-new | yes` (`AutoAddPolicy` kaldırıldı)
+- ✅ `~/.ssh/config` (HostName, User, Port, IdentityFile, ProxyJump, ProxyCommand), ssh-agent,
+  `-J` atlama sunucusu zincirleri
+- ✅ OpenSSH benzeri kimlik doğrulama: önce anahtar/agent, gerektiğinde anahtar parolası veya şifre istemi;
+  `--password` kaldırıldı, otomasyon için `PULSEOPS_SSH_PASSWORD`
+- ✅ SOC görünümü: fail2ban (jail, engelli IP), SSH giriş aktivitesi (journald 24 saat / auth.log; başarısız,
+  geçersiz kullanıcı, başarılı, şifreyle giriş, en çok deneyen IP/kullanıcı, son girişler), UID 0 hesaplar,
+  sudo/wheel üyeleri, `NOPASSWD` kuralları, `authorized_keys` sayıları; uyarılar ve sağlık skoru
+- ✅ Salt-okunur garantisi: `pulseops probe` ile çalıştırılan betik görülebilir; CI'da betik değiştiren
+  komutlar için otomatik tarama (mutasyon testiyle doğrulandı); [docs/SECURITY.md](../SECURITY.md)
+- ✅ CI'da gerçek sshd ile entegrasyon testleri (host key, ProxyJump, root olmayan + sudo'lu kullanıcı)
+
+Bu fazda bulunan ve düzeltilen hatalar:
+- **Güvenlik:** SSH bağlantısı her sunucu anahtarını sorgusuz kabul ediyordu (MITM)
+- **Güvenlik:** `pulseops status` çıktısı hostname, mount noktası ve uyarı metinlerini Rich markup olarak
+  yorumluyordu (TUI'deki markup enjeksiyonunun CLI karşılığı); tablo başlıkları da artık düz metin
+- Anahtar bulunmayan makinede şifre sorulmadan "bağlanılamadı" hatası veriliyordu
+- Başarısız şifre denemeleri iki kez sayılıyordu (sshd her denemeden sonra "Connection closed by
+  authenticating user" da yazıyor); geçersiz kullanıcı denemeleri de iki kez sayılıyordu
 
 ## Faz 5 — Ürünleşme
 

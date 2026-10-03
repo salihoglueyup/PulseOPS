@@ -8,6 +8,7 @@ from enum import Enum
 import pytest
 from pydantic import BaseModel
 from rich.console import Console
+from rich.text import Text
 
 from collectors.base import DemoCollector
 from conftest import settle
@@ -122,3 +123,24 @@ async def test_normal_data_has_no_literal_markup_tags():
             plain = "".join(seg.text for seg in console.render(widget.render()))
             match = RAW_TAG.search(plain)
             assert not match, f"{type(widget).__name__} shows raw markup: ...{plain[max(0, match.start()-40):match.end()+20]}..."
+
+
+@pytest.mark.parametrize("payload", PAYLOADS)
+def test_cli_status_and_report_are_safe(payload, tmp_path):
+    from io import StringIO
+
+    from collectors.audit_exporter import generate_audit_markdown
+    from collectors.telemetry import collect_telemetry
+    from commands import render_status
+
+    t = collect_telemetry(HostileCollector(payload))
+    t.security = poison(t.security, payload)
+    out = StringIO()
+    console = Console(file=out, width=200, color_system="truecolor", force_terminal=True)
+    render_status(t, console)
+    assert_no_injected_links(Text.from_ansi(out.getvalue()))
+    assert payload in Text.from_ansi(out.getvalue()).plain  # shown literally
+
+    md = generate_audit_markdown(t.snapshot, t.ports, t.routes, t.backups, t.containers,
+                                 databases=t.databases, services=t.services, security=t.security, storage=t.storage)
+    assert md

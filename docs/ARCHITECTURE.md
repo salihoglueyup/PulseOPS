@@ -93,14 +93,17 @@ her özellik bir kez yazılır.
   böylece SSH gecikmesi oranları bozmaz. İlk turda kısa bir baseline örneği alır, tek seferlik
   `pulseops status` da gerçek CPU değerini gösterir. Yavaş katmanı önbellekte tutar.
 * `collectors/transport.py`: `LocalTransport` (alt süreç) ve `SSHTransport` (paramiko; keepalive, tek
-  seferlik otomatik yeniden bağlanma). İkisi de betiği stdin'den `sh -s`'e verir; uzaktaki login shell
-  fish/zsh olsa da çalışır.
+  seferlik otomatik yeniden bağlanma, `~/.ssh/config` çözümleme, ProxyJump zincirleri, ProxyCommand).
+  İkisi de betiği stdin'den `sh -s`'e verir; uzaktaki login shell fish/zsh olsa da çalışır.
+* `collectors/hostkeys.py`: OpenSSH `StrictHostKeyChecking` semantiğiyle host key doğrulaması.
 * `collectors/ssh_collector.py` (`SSHCollector`): `ProbeCollector` + `SSHTransport`.
 * `collectors/base.py`: `BaseCollector.collect(include_slow, include_logs) -> Telemetry` tek giriş noktasıdır.
   `create_local_collector()` Linux'ta `ProbeCollector(LocalTransport())`, diğer platformlarda psutil tabanlı
   `LocalLiveCollector` döndürür. `DemoCollector` `collectors/mock_collector.py` üzerine kuruludur.
 * `collectors/telemetry.py`: `collect_telemetry()` ve `summarize_alerts()` (eşikler yapılandırılabilir).
 * `collectors/privilege_collector.py`: `PRIV` bölümünden yetki durumunu (`PrivilegeInfo`) çıkarır.
+* SOC bölümleri (`FAIL2BAN`, `AUTH`, `ACCESS`): sshd kayıtları hedefte `awk` ile özetlenir (sayılar + ilk 10),
+  saldırı altındaki bir sunucuda bile birkaç yüz bayt aktarılır. Ayrıntılar: [SECURITY.md](SECURITY.md).
 
 ### A2. Komut Satırı Katmanı
 * `cli.py`: TUI argümanları (`--interval`, `--slow-interval`, `--no-color`, `--ascii`, `--no-mouse`), yapılandırma yükleme ve alt komut yönlendirmesi.

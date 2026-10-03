@@ -40,6 +40,11 @@ def summarize_alerts(t: Telemetry, thresholds: Optional[AlertConfig] = None) -> 
                 alerts.append(f"{s.name} servisi çalışmıyor")
     if t.backup_data.retention.risk_level in ("HIGH", "CRITICAL"):
         alerts.append("Yedekleme saklama riski")
+    for user in t.security.access.extra_uid0:
+        alerts.append(f"UID 0 hesap: {user}")
+    auth = t.security.auth
+    if auth.known and auth.failed_total >= th.ssh_failed_logins and not t.security.fail2ban.protecting_ssh:
+        alerts.append(f"SSH kaba kuvvet: {auth.failed_total} deneme, fail2ban yok")
     if t.storage.is_cache_bloated:
         alerts.append("BuildKit önbelleği >10GB")
     return alerts

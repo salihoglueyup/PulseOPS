@@ -3,7 +3,9 @@ import shutil
 import subprocess
 from pathlib import Path
 from models.system import FirewallStatus
-from models.security import SecurityOverview, SSHSecurityAudit
+from typing import Optional
+
+from models.security import AccessAudit, AuthActivity, Fail2banStatus, SecurityOverview, SSHSecurityAudit
 from models.ports import ListeningPort, PortExposure
 
 class SecurityCollector:
@@ -77,8 +79,20 @@ class SecurityCollector:
                 pass
         return self.build_overview(ssh_audit, firewall, ports)
 
-    def build_overview(self, ssh_audit: SSHSecurityAudit, firewall: FirewallStatus, ports: list[ListeningPort]) -> SecurityOverview:
-        """Combines SSH audit, firewall state and listening ports into the security overview."""
+    def build_overview(
+        self,
+        ssh_audit: SSHSecurityAudit,
+        firewall: FirewallStatus,
+        ports: list[ListeningPort],
+        fail2ban: Optional[Fail2banStatus] = None,
+        auth: Optional[AuthActivity] = None,
+        access: Optional[AccessAudit] = None,
+        failed_login_threshold: int = 100,
+    ) -> SecurityOverview:
+        """Combines SSH audit, firewall state, listening ports and access data into the security overview."""
+        fail2ban = fail2ban or Fail2banStatus()
+        auth = auth or AuthActivity()
+        access = access or AccessAudit()
         fw_name = firewall.backend
         fw_active = firewall.is_active
         fw_known = firewall.known
@@ -120,10 +134,15 @@ class SecurityCollector:
         if safe_dbs:
             recs.append(f"[GUVENLI] Dahili Veritabanlari: Port {safe_dbs} yalnizca 127.0.0.1 (Localhost) uzerinde guvenle calisiyor.")
 
+        recs.extend(soc_recommendations(ssh_audit, fail2ban, auth, access, failed_login_threshold))
+
         if not recs:
             recs.append("[GUVENLI] Sunucu temel guvenlik kurallarina uygun ve sertlestirilmis durumda.")
 
-        overall = "GÜVENLİ" if ((fw_active or not fw_known) and not db_risks and ssh_audit.permit_root_login != "yes") else "DİKKAT GEREKTİRİYOR"
+        brute_force = auth.known and auth.failed_total >= failed_login_threshold and not fail2ban.protecting_ssh
+        safe = ((fw_active or not fw_known) and not db_risks and ssh_audit.permit_root_login != "yes"
+                and not access.extra_uid0 and not brute_force)
+        overall = "GÜVENLİ" if safe else "DİKKAT GEREKTİRİYOR"
 
         return SecurityOverview(
             ssh=ssh_audit,
@@ -135,4 +154,42 @@ class SecurityCollector:
             exposed_risky_ports=risky,
             overall_status=overall,
             recommendations=recs,
+            fail2ban=fail2ban,
+            auth=auth,
+            access=access,
         )
+
+
+def soc_recommendations(
+    ssh_audit: SSHSecurityAudit,
+    fail2ban: Fail2banStatus,
+    auth: AuthActivity,
+    access: AccessAudit,
+    failed_login_threshold: int = 100,
+) -> list[str]:
+    recs = []
+    for user in access.extra_uid0:
+        recs.append(f"[DIKKAT] UID 0 olan root disi hesap: '{user}' tam root yetkisine sahip; taninmiyorsa hemen inceleyin!")
+
+    if auth.known:
+        if auth.failed_total >= failed_login_threshold:
+            top = ", ".join(f"{s.value} ({s.count})" for s in auth.top_sources[:3])
+            if fail2ban.protecting_ssh:
+                recs.append(f"[BILGI] SSH: {auth.failed_total} basarisiz deneme ({auth.window}); fail2ban su an "
+                            f"{fail2ban.currently_banned} IP'yi engelliyor. En cok deneyen: {top}")
+            else:
+                recs.append(f"[DIKKAT] SSH kaba kuvvet: {auth.failed_total} basarisiz deneme ({auth.window}) ve fail2ban SSH'i "
+                            f"korumuyor. En cok deneyen: {top}. Oneri: fail2ban sshd jail'i ve yalnizca anahtarla giris.")
+        if auth.accepted_password and ssh_audit.password_authentication != "no":
+            recs.append(f"[UYARI] SSH: {auth.accepted_password} sifreyle basarili giris ({auth.window}). "
+                        "Anahtar tabanli girise gecip PasswordAuthentication no yapin.")
+    else:
+        recs.append("[BILGI] SSH giris kayitlari okunamadi (root, sudo veya systemd-journal grubu gerekli).")
+
+    if fail2ban.installed and fail2ban.running is False:
+        recs.append("[UYARI] fail2ban kurulu ama calismiyor: sudo systemctl enable --now fail2ban")
+
+    if access.nopasswd_rules:
+        recs.append(f"[UYARI] sudoers: {len(access.nopasswd_rules)} NOPASSWD kurali var (parolasiz root yetkisi). "
+                    "Gerekli olmayanlari kaldirin.")
+    return recs

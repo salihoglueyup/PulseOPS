@@ -114,6 +114,7 @@ pulseops status --json          # makine tarafından okunabilir tam telemetri
 pulseops report                 # Markdown denetim raporu -> audit-reports/
 pulseops report -f json -o -    # JSON raporu stdout'a
 pulseops check                  # sağlık skoruna göre çıkış kodu
+pulseops probe                  # sunucuda çalışacak salt-okunur betiği göster (denetim için)
 ```
 
 `pulseops check` Nagios/Icinga eklenti formatında tek satır ve performans verisi yazar. Çıkış kodları: `0` OK, `1` WARNING (skor < `--warn`, varsayılan 80), `2` CRITICAL (skor < `--crit`, varsayılan 50), `3` UNKNOWN (veri toplanamadı).
@@ -153,6 +154,8 @@ ssl_days = 7
 
 Sorun giderme için log dosyası: `~/.cache/pulseops/pulseops.log`.
 
+Güvenlik ekipleri için ayrıntılı model (çalıştırılan komutlar, sudo, SSH, yazılan dosyalar): [docs/SECURITY.md](docs/SECURITY.md).
+
 ### 6. Nasıl Çalışır?
 
 Yerel modda da SSH modunda da hedef makinede aynı salt-okunur shell betiği (`sh -s`) çalışır ve çıktısı aynı kodla ayrıştırılır. Ucuz ve sık değişen metrikler (CPU, RAM, ağ, portlar, süreçler) her 2 saniyede, `systemctl`, `docker`, `nginx -T` gibi ağır kontroller 30 saniyede bir toplanır; veri toplama ayrı bir thread'de yürür, arayüz hiç beklemez. 4 çekirdekli bir sunucuda canlı modun kendi tükettiği CPU tek çekirdeğin yaklaşık %2'si kadardır (`--interval 5` ile ~%1.3).
@@ -175,7 +178,7 @@ PulseOps klavyedeki `1` - `0` tuşlarıyla geçiş yapılabilen 10 derinlemesine
 | **`6`** | **🌐 Siteler (Web & Proxy)** | Nginx & Docker yönlendirme haritası. Domainler, dinlenen portlar, SSL gün sayaçları, **502 Bad Gateway kök neden teşhisi** ve tarayıcıda tek tuşla açma (`Enter`). |
 | **`7`** | **💾 Yedekler** | Systemd timer'ları, crontab yedekleme görevleri (pg_dump, restic, rsync) ve saklama risk analizleri. |
 | **`8`** | **📋 Loglar** | Canlı sistem ve web log akışı, hata filtreleme ve gerçek zamanlı takip. |
-| **`9`** | **🛡️ Güvenlik** | SSH güvenlik sertleştirmesi (`PermitRootLogin`), güvenlik duvarı aktif kuralları ve riskli açık port analizi. |
+| **`9`** | **🛡️ Güvenlik** | SSH sertleştirmesi (`sshd -T`), güvenlik duvarı (UFW/firewalld/iptables/nftables), riskli açık portlar ve **SOC görünümü**: fail2ban durumu, son 24 saatteki başarısız/başarılı SSH girişleri ve en çok deneyen IP'ler, UID 0 hesaplar, sudo/wheel üyeleri, `NOPASSWD` kuralları, `authorized_keys` sayıları. |
 | **`0`** | **📦 Depolama** | Disk bölümleri, Docker BuildKit önbellek analizi, containerd katmanları ve geri kazanılabilecek (`reclaimable`) alan uyarısı. |
 
 ---

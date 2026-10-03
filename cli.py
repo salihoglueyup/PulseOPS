@@ -14,6 +14,7 @@ EPILOG = """komutlar:
   pulseops report [-f md|json]  denetim raporu üretir
   pulseops check                sağlık skoruna göre çıkış kodu (cron / monitoring)
   pulseops config [--init]      yapılandırmayı göster / şablon oluştur
+  pulseops probe [--tier ...]   sunucuda çalışan salt-okunur betiği göster (denetim)
   pulseops update | uninstall   kendini günceller / kaldırır
   pulseops version              sürüm bilgisi
 """

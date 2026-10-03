@@ -1,8 +1,10 @@
 """Pure parsers for probe sections. No I/O, no state: everything stateful lives in ProbeCollector."""
+import datetime
 import re
 from typing import NamedTuple
 
 from models.ports import ListeningPort
+from models.security import AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, LoginEvent
 from models.system import DiskPartition, FirewallStatus, MemoryMetric
 from collectors.port_collector import classify_exposure, get_service_hint
 
@@ -395,3 +397,105 @@ def parse_backup_files(text: str) -> tuple[list[str], dict[str, int], dict[str, 
             shas[current_sha] = line.strip()
             current_sha = None
     return names, sizes, shas
+
+
+# --- SOC: fail2ban, authentication activity, privileged access ------------------------------------
+
+def _jail_value(text: str, label: str) -> str:
+    m = re.search(rf"{re.escape(label)}:\s*(.*)", text)
+    return m.group(1).strip() if m else ""
+
+
+def parse_fail2ban(text: str) -> Fail2banStatus:
+    lines = text.splitlines()
+    if "INSTALLED" not in (line.strip() for line in lines):
+        return Fail2banStatus(installed=False)
+    running = True if "RUNNING" in text.split() else (False if "STOPPED" in text.split() else None)
+    if any(line.strip() == "UNKNOWN" for line in lines):
+        # Status could not be read: not running, or no permission for the fail2ban socket
+        return Fail2banStatus(installed=True, running=running, known=running is False)
+
+    jails = []
+    for block in re.split(r"^#JAIL ", text, flags=re.M)[1:]:
+        name = block.splitlines()[0].strip()
+        ips = _jail_value(block, "Banned IP list").split()
+        jails.append(Fail2banJail(
+            name=name,
+            currently_failed=int(_jail_value(block, "Currently failed") or 0),
+            currently_banned=int(_jail_value(block, "Currently banned") or 0),
+            total_banned=int(_jail_value(block, "Total banned") or 0),
+            banned_ips=ips[:50],
+        ))
+    return Fail2banStatus(installed=True, running=True if jails or running is None else running, known=True, jails=jails)
+
+
+def _epoch_or_text(stamp: str) -> str:
+    if re.fullmatch(r"\d+\.\d+", stamp):
+        return datetime.datetime.fromtimestamp(float(stamp)).strftime("%Y-%m-%d %H:%M")
+    return stamp.replace("_", " ") if stamp != "-" else ""
+
+
+def parse_auth(text: str) -> AuthActivity:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines or "UNKNOWN" in lines:
+        return AuthActivity(known=False)
+    activity = AuthActivity(known=True)
+    for line in lines:
+        key, _, rest = line.partition(" ")
+        if key == "SOURCE":
+            activity.source = rest
+            activity.window = "son 24 saat" if rest == "journal" else ("" if rest == "none" else "son 20.000 log satırı")
+            if rest == "none":
+                activity.known = False
+        elif key in ("FAILED", "INVALID", "ACCEPTED", "ACCEPTED_PASSWORD") and rest.isdigit():
+            setattr(activity, {"FAILED": "failed", "INVALID": "invalid_user", "ACCEPTED": "accepted",
+                               "ACCEPTED_PASSWORD": "accepted_password"}[key], int(rest))
+        elif key in ("FIP", "FUSER"):
+            count, _, value = rest.partition(" ")
+            if count.isdigit() and value:
+                item = CountedItem(value=value, count=int(count))
+                (activity.top_sources if key == "FIP" else activity.top_users).append(item)
+        elif key == "ACC":
+            parts = rest.split()
+            if len(parts) >= 4:
+                activity.recent_accepted.append(
+                    LoginEvent(time=_epoch_or_text(parts[0]), method=parts[1], user=parts[2], source=parts[3]))
+    activity.top_sources.sort(key=lambda c: -c.count)
+    activity.top_users.sort(key=lambda c: -c.count)
+    return activity
+
+
+def parse_access(text: str) -> AccessAudit:
+    audit = AccessAudit()
+    block = None
+    sudoers_lines: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("#") and line[1:].isupper():
+            block = line[1:]
+            continue
+        if not line:
+            continue
+        if block == "UID0":
+            audit.uid0_users.append(line)
+        elif block == "ADMINS":
+            members = line.split(":")[3] if line.count(":") >= 3 else ""
+            for member in filter(None, (m.strip() for m in members.split(","))):
+                if member not in audit.admin_users:
+                    audit.admin_users.append(member)
+        elif block == "LOGIN":
+            audit.login_users.append(line)
+        elif block == "SUDOERS":
+            sudoers_lines.append(line)
+        elif block == "AUTHKEYS":
+            user, _, count = line.partition(" ")
+            if count.isdigit():
+                audit.authorized_keys[user] = int(count)
+                audit.keys_known = True
+    if "UNKNOWN" in sudoers_lines:
+        audit.sudoers_known = False
+        sudoers_lines.remove("UNKNOWN")
+    else:
+        audit.sudoers_known = "SUDOERS" in text
+    audit.nopasswd_rules = sudoers_lines[:20]
+    return audit

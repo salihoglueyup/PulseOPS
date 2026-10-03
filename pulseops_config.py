@@ -45,6 +45,7 @@ class AlertConfig(_Section):
     disk_percent: float = Field(80.0, ge=1, le=100, description="Disk doluluk uyarı eşiği (%)")
     memory_percent: float = Field(85.0, ge=1, le=100, description="RAM kullanım uyarı eşiği (%)")
     ssl_days: int = Field(7, ge=0, le=365, description="SSL bitişine kalan gün uyarı eşiği")
+    ssh_failed_logins: int = Field(100, ge=1, description="Bu sayının üzerinde başarısız SSH denemesi ve fail2ban koruması yoksa uyar")
 
 
 class SSHConfig(_Section):

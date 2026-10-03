@@ -22,7 +22,7 @@ from collectors import probe_parsers as pp
 from models.backup import BackupData
 from models.docker import ContainerSummary
 from models.privileges import PrivilegeInfo
-from models.security import SSHSecurityAudit
+from models.security import AccessAudit, AuthActivity, Fail2banStatus, SSHSecurityAudit
 from models.services import ServiceUnit
 from models.storage import StorageOverview
 from models.system import CpuMetric, DiskIoRate, FirewallStatus, NetworkRate, ProcessInfo, SystemSnapshot
@@ -37,6 +37,7 @@ RARE_REFRESH_SECONDS = 600
 class ProbeCollector(BaseCollector):
     def __init__(self, transport, fast_timeout: float = 15.0, slow_timeout: float = 60.0, use_sudo: bool = True):
         self.transport = transport
+        self.failed_login_threshold = 100
         # None = detect on the next slow run; then True/False is reused so `sudo -n true` is not
         # repeated (every sudo call lands in the host's auth log)
         self._sudo: Optional[bool] = None if use_sudo else False
@@ -79,6 +80,9 @@ class ProbeCollector(BaseCollector):
         self._firewall = FirewallStatus(is_active=False, backend="?", summary="Bekleniyor", known=False)
         self._ssh_audit = SSHSecurityAudit()
         self._privileges = PrivilegeInfo()
+        self._fail2ban = Fail2banStatus()
+        self._auth = AuthActivity()
+        self._access = AccessAudit()
         self._logs: list[str] = []
 
     # --- public API -------------------------------------------------------------------------
@@ -130,7 +134,10 @@ class ProbeCollector(BaseCollector):
             containers=self._containers,
             services=self._services_list,
             databases=self._db.discover_databases(ports, self._containers),
-            security=self._security.build_overview(self._ssh_audit, self._firewall, ports),
+            security=self._security.build_overview(
+                self._ssh_audit, self._firewall, ports, self._fail2ban, self._auth, self._access,
+                failed_login_threshold=self.failed_login_threshold,
+            ),
             storage=storage,
             privileges=self._privileges,
             logs=self._logs,
@@ -299,6 +306,9 @@ class ProbeCollector(BaseCollector):
             self._ssh_audit = SSHSecurityAudit(port=0, permit_root_login="KAPALI", password_authentication="KAPALI",
                                                pubkey_authentication="KAPALI", is_hardened=True)
         self._privileges = parse_privileges_section(s.get("PRIV", ""))
+        self._fail2ban = pp.parse_fail2ban(s.get("FAIL2BAN", ""))
+        self._auth = pp.parse_auth(s.get("AUTH", ""))
+        self._access = pp.parse_access(s.get("ACCESS", ""))
         if self._sudo is None:
             # PRIV reports sudo_ok only when this run actually enabled sudo (non-root + it works)
             self._sudo = "sudo_ok" in s.get("PRIV", "").split()
