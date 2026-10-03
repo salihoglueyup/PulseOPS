@@ -7,15 +7,17 @@ $venvDir = Join-Path $installDir "venv"
 
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 
+$repoUrl = if ($env:PULSEOPS_REPO) { $env:PULSEOPS_REPO } else { "https://github.com/salihoglueyup/PulseOPS.git" }
+
 if (Get-Command python -ErrorAction SilentlyContinue) {
     Write-Host "📦 Python bulundu, izole ortam hazırlanıyor..." -ForegroundColor Green
     python -m venv $venvDir
     & "$venvDir\Scripts\pip.exe" install --upgrade pip --quiet
-    & "$venvDir\Scripts\pip.exe" install --upgrade git+https://github.com/AloGroupTR/pulseops.git --quiet
+    & "$venvDir\Scripts\pip.exe" install --upgrade "git+$repoUrl" --quiet
     Copy-Item "$venvDir\Scripts\pulseops.exe" "$binDir\pulseops.exe" -Force
 } else {
     Write-Host "⬇️ Bağımsız PulseOps binary'si indiriliyor..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri "https://github.com/AloGroupTR/pulseops/releases/latest/download/pulseops-windows-amd64.exe" -OutFile "$binDir\pulseops.exe"
+    Invoke-WebRequest -Uri "https://github.com/salihoglueyup/PulseOPS/releases/latest/download/pulseops-windows-amd64.exe" -OutFile "$binDir\pulseops.exe"
 }
 
 # Add to User PATH if not present

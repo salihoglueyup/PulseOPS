@@ -9,10 +9,12 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
+REPO_URL="${PULSEOPS_REPO:-https://github.com/salihoglueyup/PulseOPS.git}"
+
 # 2. Check if pipx is available, use pipx if present
 if command -v pipx &> /dev/null; then
     echo "📦 pipx bulundu, izole ortamda kuruluyor..."
-    pipx install --force git+https://github.com/AloGroupTR/pulseops.git
+    pipx install --force "git+$REPO_URL"
     pipx ensurepath
     echo "✓ Kurulum tamamlandı! Terminalde 'pulseops' yazarak başlatabilirsiniz."
     exit 0
@@ -30,9 +32,9 @@ python3 -m venv "$INSTALL_DIR/venv" || {
     exit 1
 }
 
-echo "⬇️ PulseOps indiriliyor ve kuruluyor..."
+echo "⬇️ PulseOps indiriliyor ve kuruluyor ($REPO_URL)..."
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip --quiet
-"$INSTALL_DIR/venv/bin/pip" install --upgrade git+https://github.com/AloGroupTR/pulseops.git --quiet
+"$INSTALL_DIR/venv/bin/pip" install --upgrade "git+$REPO_URL" --quiet
 
 # 4. Create symlink in ~/.local/bin
 ln -sf "$INSTALL_DIR/venv/bin/pulseops" "$BIN_DIR/pulseops"
