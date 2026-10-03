@@ -50,12 +50,19 @@ THEMES = [
     ("matrix", "Matrix Hacker"),
 ]
 
+from ui.theme_css import DEFAULT_TCSS
+
+_CSS_FILE = Path(__file__).parent / "styles.tcss"
+
 class ServerTUIApp(App):
     """Main Textual Application for Server TUI Observability."""
 
-    CSS_PATH = Path(__file__).parent / "styles.tcss"
     TITLE = "PulseOps"
     SUB_TITLE = "PulseTUI - Agentless Kurumsal Sunucu Gözlem Paneli"
+    if _CSS_FILE.exists():
+        CSS_PATH = _CSS_FILE
+    else:
+        DEFAULT_CSS = DEFAULT_TCSS
 
     BINDINGS = [
         Binding("1", "tab_1", "Dashboard (1)", show=True),

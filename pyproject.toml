@@ -29,6 +29,9 @@ server-tui = "cli:main"
 [tool.setuptools]
 py-modules = ["cli", "main"]
 
+[tool.setuptools.package-data]
+ui = ["*.tcss", "**/*.tcss"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["collectors*", "models*", "ui*"]
