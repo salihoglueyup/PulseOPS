@@ -1,5 +1,5 @@
 # Builds pulseops_<version>_amd64.deb and pulseops-<version>-1.x86_64.rpm from the release binary.
-#   (binary at dist/pulseops-linux-amd64)  PULSEOPS_VERSION=1.2.0 nfpm pkg -f packaging/nfpm.yaml -p deb -t dist/
+#   (binary at dist/pulseops-linux-amd64)  PULSEOPS_VERSION=1.3.0 nfpm pkg -f packaging/nfpm.yaml -p deb -t dist/
 name: pulseops
 arch: amd64
 platform: linux
