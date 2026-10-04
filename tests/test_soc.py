@@ -3,14 +3,14 @@ import subprocess
 
 import pytest
 
-from collectors import probe_parsers as pp
-from collectors.audit_exporter import calculate_audit_score
-from collectors.base import DemoCollector
-from collectors.probe import AUTH_AWK
-from collectors.security_collector import SecurityCollector
-from collectors.telemetry import collect_telemetry, summarize_alerts
-from models.security import AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, SSHSecurityAudit
-from models.system import FirewallStatus
+from pulseops.collectors import probe_parsers as pp
+from pulseops.collectors.audit_exporter import calculate_audit_score
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.probe import AUTH_AWK
+from pulseops.collectors.security_collector import SecurityCollector
+from pulseops.collectors.telemetry import collect_telemetry, summarize_alerts
+from pulseops.models.security import AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, SSHSecurityAudit
+from pulseops.models.system import FirewallStatus
 
 # Real OpenSSH 9.6 output for: 2 wrong root passwords, invalid users admin + oracle, a wrong deploy
 # password, then a password login and two key logins. sshd logs "Connection closed by authenticating
@@ -209,10 +209,10 @@ def test_parse_updates_unknowns_are_not_zero():
 
 
 def test_updates_raise_alerts_and_lower_the_score():
-    from collectors.audit_exporter import calculate_audit_score
-    from collectors.base import DemoCollector
-    from collectors.telemetry import collect_telemetry, summarize_alerts
-    from models.security import UpdateStatus
+    from pulseops.collectors.audit_exporter import calculate_audit_score
+    from pulseops.collectors.base import DemoCollector
+    from pulseops.collectors.telemetry import collect_telemetry, summarize_alerts
+    from pulseops.models.security import UpdateStatus
 
     t = collect_telemetry(DemoCollector())
     base, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, t.security, t.storage)
@@ -274,10 +274,10 @@ def test_parse_hardening_unknowns():
 
 
 def test_hardening_alerts_score_and_drift():
-    from collectors.audit_exporter import calculate_audit_score
-    from collectors.base import DemoCollector
-    from collectors.drift import HIGH, diff, fingerprint
-    from collectors.telemetry import collect_telemetry, summarize_alerts
+    from pulseops.collectors.audit_exporter import calculate_audit_score
+    from pulseops.collectors.base import DemoCollector
+    from pulseops.collectors.drift import HIGH, diff, fingerprint
+    from pulseops.collectors.telemetry import collect_telemetry, summarize_alerts
 
     t = collect_telemetry(DemoCollector())
     base, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, t.security, t.storage)

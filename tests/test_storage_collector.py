@@ -1,7 +1,7 @@
-from collectors.storage_collector import StorageCollector
-from collectors.mock_collector import MockCollector
-from models.storage import StorageOverview
-from ui.widgets.storage_panel import StoragePanel
+from pulseops.collectors.storage_collector import StorageCollector
+from pulseops.collectors.mock_collector import MockCollector
+from pulseops.models.storage import StorageOverview
+from pulseops.ui.widgets.storage_panel import StoragePanel
 
 TABULAR_DF_BLOATED = """
 TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE

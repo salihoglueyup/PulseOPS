@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-import cli
-from commands import EXIT_UNKNOWN, EXIT_WARNING
+from pulseops import cli
+from pulseops.commands import EXIT_UNKNOWN, EXIT_WARNING
 
 
 def run(argv, capsys):
@@ -56,10 +56,10 @@ def test_check_prometheus_textfile(tmp_path, monkeypatch, capsys):
 
 def test_prometheus_label_escaping():
     parser = pytest.importorskip("prometheus_client.parser")
-    from collectors.base import DemoCollector
-    from collectors.telemetry import collect_telemetry
-    from commands import CheckResult
-    from exporters import prometheus_text
+    from pulseops.collectors.base import DemoCollector
+    from pulseops.collectors.telemetry import collect_telemetry
+    from pulseops.commands import CheckResult
+    from pulseops.exporters import prometheus_text
 
     t = collect_telemetry(DemoCollector())
     t.snapshot.hostname = 'evil"host\\\nname{x="1"}'

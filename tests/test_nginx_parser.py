@@ -1,6 +1,6 @@
 from pathlib import Path
-from collectors.nginx_parser import NginxParser
-from models.ports import ListeningPort, PortExposure
+from pulseops.collectors.nginx_parser import NginxParser
+from pulseops.models.ports import ListeningPort, PortExposure
 
 def test_parse_nginx_config():
     fixture_path = Path("tests/fixtures/nginx_sample.conf")

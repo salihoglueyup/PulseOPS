@@ -27,22 +27,18 @@ dev = [
 ]
 
 [project.scripts]
-pulseops = "cli:main"
-pulsetui = "cli:main"
-server-tui = "cli:main"
-
-[tool.setuptools]
-py-modules = ["cli", "main", "commands", "installer", "version", "pulseops_config", "logging_setup", "history", "notify", "exporters", "scheduler", "ai"]
+pulseops = "pulseops.cli:main"
+pulsetui = "pulseops.cli:main"
 
 [tool.setuptools.dynamic]
-version = {attr = "version.__version__"}
+version = {attr = "pulseops.version.__version__"}
 
 [tool.setuptools.package-data]
-ui = ["*.tcss", "**/*.tcss"]
+"pulseops.ui" = ["*.tcss"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["collectors*", "models*", "ui*"]
+include = ["pulseops*"]
 namespaces = false
 
 [tool.pytest.ini_options]

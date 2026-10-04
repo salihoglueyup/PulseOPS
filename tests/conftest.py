@@ -7,7 +7,7 @@ def isolated_user_dirs(tmp_path_factory, monkeypatch):
     root = tmp_path_factory.mktemp("home")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(root / "config"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(root / "cache"))
-    monkeypatch.setattr("pulseops_config.SYSTEM_CONFIG", root / "etc" / "config.toml")
+    monkeypatch.setattr("pulseops.config.SYSTEM_CONFIG", root / "etc" / "config.toml")
 
 
 async def settle(pilot):

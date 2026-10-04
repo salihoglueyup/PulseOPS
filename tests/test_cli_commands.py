@@ -3,12 +3,12 @@ import json
 import pytest
 from rich.cells import cell_len
 
-import cli
-from commands import evaluate_check, EXIT_OK, EXIT_WARNING, EXIT_CRITICAL, EXIT_UNKNOWN
-from collectors.base import DemoCollector
-from collectors.telemetry import collect_telemetry, summarize_alerts
-from installer import parse_version, verify_checksum, find_links, detect_install_mode, sha256_file
-from ui.ascii_filter import to_ascii, to_ascii_text
+from pulseops import cli
+from pulseops.commands import evaluate_check, EXIT_OK, EXIT_WARNING, EXIT_CRITICAL, EXIT_UNKNOWN
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.telemetry import collect_telemetry, summarize_alerts
+from pulseops.installer import parse_version, verify_checksum, find_links, detect_install_mode, sha256_file
+from pulseops.ui.ascii_filter import to_ascii, to_ascii_text
 
 
 def run_cli(argv, capsys):
@@ -140,7 +140,7 @@ class FakeRelease:
         self.checksum = checksum or f"{hashlib.sha256(payload).hexdigest()}  pulseops-linux-amd64\n"
 
     def install(self, monkeypatch):
-        import installer
+        from pulseops import installer
         monkeypatch.setattr(installer, "latest_release_tag", lambda: self.tag)
 
         def fake_get(url, timeout=15.0):
@@ -151,7 +151,7 @@ class FakeRelease:
 
 
 def test_update_binary_replaces_executable(tmp_path, monkeypatch):
-    import installer
+    from pulseops import installer
     exe = tmp_path / "pulseops"
     exe.write_bytes(b"old")
     FakeRelease("v99.0.0", b"new-binary").install(monkeypatch)
@@ -162,7 +162,7 @@ def test_update_binary_replaces_executable(tmp_path, monkeypatch):
 
 
 def test_update_binary_rejects_bad_checksum(tmp_path, monkeypatch):
-    import installer
+    from pulseops import installer
     exe = tmp_path / "pulseops"
     exe.write_bytes(b"old")
     FakeRelease("v99.0.0", b"tampered", checksum="0" * 64).install(monkeypatch)
@@ -172,7 +172,7 @@ def test_update_binary_rejects_bad_checksum(tmp_path, monkeypatch):
 
 
 def test_update_binary_already_latest(tmp_path, monkeypatch, capsys):
-    import installer
+    from pulseops import installer
     exe = tmp_path / "pulseops"
     exe.write_bytes(b"old")
     FakeRelease(f"v{installer.__version__}", b"same").install(monkeypatch)
@@ -182,7 +182,7 @@ def test_update_binary_already_latest(tmp_path, monkeypatch, capsys):
 
 
 def test_package_install_is_left_to_the_package_manager(monkeypatch, capsys):
-    import installer
+    from pulseops import installer
 
     assert installer.detect_install_mode(frozen=True, executable="/usr/bin/pulseops") == "package"
     assert installer.detect_install_mode(frozen=True, executable="/usr/local/bin/pulseops") == "binary"

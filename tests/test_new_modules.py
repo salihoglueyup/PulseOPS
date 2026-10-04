@@ -1,14 +1,14 @@
-from models.services import ServiceState
-from models.ports import ListeningPort, PortExposure
-from models.docker import ContainerSummary
+from pulseops.models.services import ServiceState
+from pulseops.models.ports import ListeningPort, PortExposure
+from pulseops.models.docker import ContainerSummary
 
-from collectors.service_collector import ServiceCollector
-from collectors.db_collector import DatabaseCollector
-from collectors.security_collector import SecurityCollector
-from collectors.mock_collector import MockCollector
-from ui.widgets.dashboard_status_bar import DashboardStatusBar
-from ui.widgets.alert_ticker import AlertTicker
-from ui.modals.config_viewer_modal import ConfigViewerModal
+from pulseops.collectors.service_collector import ServiceCollector
+from pulseops.collectors.db_collector import DatabaseCollector
+from pulseops.collectors.security_collector import SecurityCollector
+from pulseops.collectors.mock_collector import MockCollector
+from pulseops.ui.widgets.dashboard_status_bar import DashboardStatusBar
+from pulseops.ui.widgets.alert_ticker import AlertTicker
+from pulseops.ui.modals.config_viewer_modal import ConfigViewerModal
 
 def test_service_collector_parsing():
     raw_units = """

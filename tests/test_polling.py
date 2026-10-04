@@ -2,9 +2,9 @@ import threading
 
 import pytest
 
-from collectors.base import DemoCollector
+from pulseops.collectors.base import DemoCollector
 from conftest import settle
-from ui.app import ServerTUIApp
+from pulseops.ui.app import ServerTUIApp
 
 
 class RecordingCollector(DemoCollector):

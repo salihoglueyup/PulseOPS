@@ -2,12 +2,12 @@ import json
 
 import pytest
 
-import ai
-import cli
-from collectors.base import DemoCollector
-from collectors.telemetry import collect_telemetry
+from pulseops import ai
+from pulseops import cli
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.telemetry import collect_telemetry
 from fake_ollama import FakeOllama
-from pulseops_config import AIConfig
+from pulseops.config import AIConfig
 
 
 @pytest.fixture
@@ -149,8 +149,8 @@ async def wait_idle(pilot, modal, timeout: float = 10.0):
 @pytest.mark.asyncio
 async def test_tui_ai_modal_streams_and_follows_up(ollama):
     from conftest import settle
-    from ui.app import ServerTUIApp
-    from ui.modals.ai_modal import AIModal
+    from pulseops.ui.app import ServerTUIApp
+    from pulseops.ui.modals.ai_modal import AIModal
 
     ollama.reply = ["[bold red]markup değil[/] ", "\x1b[2Jtemiz"]
     app = ServerTUIApp(collector=DemoCollector(), poll_interval=3600, ai_config=AIConfig(url=ollama.url))
@@ -180,7 +180,7 @@ async def test_tui_ai_modal_streams_and_follows_up(ollama):
 @pytest.mark.asyncio
 async def test_tui_ai_errors_are_shown_not_raised():
     from conftest import settle
-    from ui.app import ServerTUIApp
+    from pulseops.ui.app import ServerTUIApp
 
     app = ServerTUIApp(collector=DemoCollector(), poll_interval=3600, ai_config=AIConfig(url="http://10.9.9.9:11434"))
     async with app.run_test(size=(120, 40)) as pilot:
@@ -189,3 +189,16 @@ async def test_tui_ai_errors_are_shown_not_raised():
         await settle(pilot)
         assert any("allow_remote" in str(n.message) for n in app._notifications)
         assert app.is_running
+
+
+def test_runaway_model_is_cut_by_limits(ollama):
+    t = collect_telemetry(DemoCollector())
+    ollama.endless = True
+    answer = ai.Conversation(AIConfig(url=ollama.url, timeout=5, max_tokens=64), t).ask()
+    assert answer.endswith("[yanıt 5 sn sınırında kesildi]")
+    assert ollama.requests[-1]["options"]["num_predict"] == 64
+
+    ollama.endless = False
+    ollama.done_reason = "length"
+    answer = ai.Conversation(AIConfig(url=ollama.url, max_tokens=64), t).ask()
+    assert answer.endswith("[yanıt 64 token sınırında kesildi]")

@@ -1,5 +1,5 @@
-from collectors.http_health import HTTPHealthChecker
-from models.proxy import ProxyRoute
+from pulseops.collectors.http_health import HTTPHealthChecker
+from pulseops.models.proxy import ProxyRoute
 
 def test_enrich_mock_health():
     checker = HTTPHealthChecker()

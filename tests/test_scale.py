@@ -34,7 +34,7 @@ def big_host() -> dict[str, str]:
 
 @pytest.fixture(scope="module")
 def telemetry():
-    from collectors.probe_collector import ProbeCollector
+    from pulseops.collectors.probe_collector import ProbeCollector
     from test_fuzz_probe import FuzzTransport
 
     collector = ProbeCollector(FuzzTransport(big_host()))
@@ -53,7 +53,7 @@ def test_large_host_is_collected_quickly(telemetry):
 
 def test_failed_services_are_never_capped_away(telemetry):
     t, _ = telemetry
-    from models.services import ServiceState
+    from pulseops.models.services import ServiceState
 
     failed = sorted(s.name for s in t.services if s.state == ServiceState.FAILED)
     assert failed == sorted(f"svc-{i:04d}.service" for i in range(N_SVC) if i % 50 == 49)
@@ -63,10 +63,10 @@ def test_failed_services_are_never_capped_away(telemetry):
 @pytest.mark.asyncio
 async def test_long_tabs_scroll_on_a_small_terminal():
     """Tab content taller than an 80x24 SSH terminal must be reachable (it used to be cut off)."""
-    from collectors.probe_collector import ProbeCollector
+    from pulseops.collectors.probe_collector import ProbeCollector
     from conftest import settle
     from test_fuzz_probe import FuzzTransport
-    from ui.app import ServerTUIApp
+    from pulseops.ui.app import ServerTUIApp
 
     app = ServerTUIApp(collector=ProbeCollector(FuzzTransport(big_host())), poll_interval=3600)
     async with app.run_test(size=(80, 24)) as pilot:

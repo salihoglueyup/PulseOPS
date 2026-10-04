@@ -5,9 +5,9 @@ import subprocess
 import paramiko
 import pytest
 
-import cli
-from collectors.hostkeys import UnknownHostKeyError, VerifyingHostKeyPolicy, fingerprint, load_known_hosts
-from collectors.transport import parse_destination, resolve_target
+from pulseops import cli
+from pulseops.collectors.hostkeys import UnknownHostKeyError, VerifyingHostKeyPolicy, fingerprint, load_known_hosts
+from pulseops.collectors.transport import parse_destination, resolve_target
 
 
 @pytest.mark.parametrize("spec,expected", [
@@ -98,8 +98,8 @@ def test_password_flag_is_rejected_with_explanation(capsys):
 
 def test_unknown_host_key_is_unknown_for_monitoring(tmp_path, monkeypatch, capsys):
     """`pulseops check` (cron, no tty) must not hang on a prompt nor trust an unknown key."""
-    import commands
-    from collectors import transport as tr
+    from pulseops import commands
+    from pulseops.collectors import transport as tr
 
     def refuse(self):
         raise UnknownHostKeyError("[web]:22", "ssh-ed25519", "SHA256:abc")

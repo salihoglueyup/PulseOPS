@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Yayınlanacak sürüm etiketi (ör. v1.2.0, version.py ile aynı olmalı). Boş: yalnızca derle, yayınlama."
+        description: "Yayınlanacak sürüm etiketi (ör. v1.2.0, pulseops/version.py ile aynı olmalı). Boş: yalnızca derle, yayınlama."
         required: false
         default: ""
 
@@ -42,8 +42,8 @@ jobs:
           python3.11 -m PyInstaller --noconfirm --clean --onefile \
             --name pulseops-linux-amd64 \
             --collect-all textual \
-            --add-data "ui/styles.tcss:ui" \
-            cli.py
+            --add-data "pulseops/ui/styles.tcss:pulseops/ui" \
+            packaging/pyinstaller_entry.py
 
       - name: Smoke test binary
         run: |
@@ -85,7 +85,7 @@ jobs:
       - name: Build packages with nfpm
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
-          export PULSEOPS_VERSION="$(python3 -c 'import version; print(version.__version__)')"
+          export PULSEOPS_VERSION="$(python3 -c 'from pulseops.version import __version__; print(__version__)')"
           chmod +x dist/pulseops-linux-amd64
           mkdir -p packages
           "$(go env GOPATH)/bin/nfpm" pkg -f packaging/nfpm.yaml -p deb -t packages/
@@ -143,8 +143,8 @@ jobs:
           pyinstaller --noconfirm --clean --onefile \
             --name ${{ matrix.artifact_name }} \
             --collect-all textual \
-            --add-data "ui/styles.tcss${{ matrix.sep }}ui" \
-            cli.py
+            --add-data "pulseops/ui/styles.tcss${{ matrix.sep }}pulseops/ui" \
+            packaging/pyinstaller_entry.py
 
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
@@ -152,8 +152,8 @@ jobs:
           pyinstaller --noconfirm --clean --onefile `
             --name pulseops `
             --collect-all textual `
-            --add-data "ui/styles.tcss;ui" `
-            cli.py
+            --add-data "pulseops/ui/styles.tcss;pulseops/ui" `
+            packaging/pyinstaller_entry.py
           Move-Item dist/pulseops.exe dist/${{ matrix.asset_name }}
 
       - name: Upload Binary Artifact
@@ -172,11 +172,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check tag matches version.py
+      - name: Check tag matches pulseops/version.py
         run: |
-          expected="v$(python3 -c 'import version; print(version.__version__)')"
+          expected="v$(python3 -c 'from pulseops.version import __version__; print(__version__)')"
           if [ "$RELEASE_TAG" != "$expected" ]; then
-            echo "::error::Tag $RELEASE_TAG does not match version.py ($expected)"; exit 1
+            echo "::error::Tag $RELEASE_TAG does not match pulseops/version.py ($expected)"; exit 1
           fi
       - name: Download all artifacts
         uses: actions/download-artifact@v4

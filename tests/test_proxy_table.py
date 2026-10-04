@@ -1,7 +1,7 @@
 from unittest.mock import patch
-from models.proxy import ProxyRoute
-from models.ports import ListeningPort, PortExposure
-from ui.widgets.port_table import PortProxyTable
+from pulseops.models.proxy import ProxyRoute
+from pulseops.models.ports import ListeningPort, PortExposure
+from pulseops.ui.widgets.port_table import PortProxyTable
 
 def test_proxy_route_enhanced_properties():
     # 1. Normal web route

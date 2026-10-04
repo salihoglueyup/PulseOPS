@@ -1,8 +1,8 @@
-from models.system import CpuMetric, MemoryMetric, DiskPartition, NetworkRate, SystemSnapshot
-from models.ports import PortExposure, ListeningPort
-from models.proxy import ProxyRoute
-from models.backup import BackupStatus, BackupTask
-from models.docker import ContainerSummary
+from pulseops.models.system import CpuMetric, MemoryMetric, DiskPartition, NetworkRate, SystemSnapshot
+from pulseops.models.ports import PortExposure, ListeningPort
+from pulseops.models.proxy import ProxyRoute
+from pulseops.models.backup import BackupStatus, BackupTask
+from pulseops.models.docker import ContainerSummary
 
 def test_system_snapshot_model():
     cpu = CpuMetric(cores=4, total_percent=45.5, per_core_percent=[40.0, 50.0, 42.0, 50.0], load_avg=(1.2, 0.9, 0.7))

@@ -3,13 +3,13 @@ import re
 
 import pytest
 
-from collectors import probe_parsers as pp
-from collectors.nginx_parser import NginxParser
-from collectors.port_collector import PortCollector
-from collectors.probe import build_script, parse_sections
-from collectors.probe_collector import ProbeCollector
-from collectors.transport import LocalTransport, TransportError
-from models.ports import PortExposure
+from pulseops.collectors import probe_parsers as pp
+from pulseops.collectors.nginx_parser import NginxParser
+from pulseops.collectors.port_collector import PortCollector
+from pulseops.collectors.probe import build_script, parse_sections
+from pulseops.collectors.probe_collector import ProbeCollector
+from pulseops.collectors.transport import LocalTransport, TransportError
+from pulseops.models.ports import PortExposure
 
 
 # --- sections -------------------------------------------------------------------------------------
@@ -318,10 +318,10 @@ def test_real_local_probe():
 
 
 def test_unknown_firewall_is_neither_alerted_nor_penalized():
-    from collectors.base import DemoCollector
-    from collectors.telemetry import collect_telemetry, summarize_alerts
-    from collectors.audit_exporter import calculate_audit_score
-    from models.system import FirewallStatus
+    from pulseops.collectors.base import DemoCollector
+    from pulseops.collectors.telemetry import collect_telemetry, summarize_alerts
+    from pulseops.collectors.audit_exporter import calculate_audit_score
+    from pulseops.models.system import FirewallStatus
 
     t = collect_telemetry(DemoCollector())
     base_score, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
@@ -338,7 +338,7 @@ def test_unknown_firewall_is_neither_alerted_nor_penalized():
 
 
 def test_sshd_config_semantics():
-    from collectors.security_collector import SecurityCollector
+    from pulseops.collectors.security_collector import SecurityCollector
 
     parse = SecurityCollector().parse_sshd_config_text
     # OpenSSH defaults when nothing is set
@@ -394,7 +394,7 @@ def test_parse_backup_files():
 
 
 def test_rare_sections_are_skipped_while_cached():
-    from collectors.probe import RARE_SECTIONS
+    from pulseops.collectors.probe import RARE_SECTIONS
 
     script, _ = build_script(fast=False, slow=True, skip=frozenset(RARE_SECTIONS))
     assert ":UNIT_FILES===" not in script and ":DOCKER===" in script

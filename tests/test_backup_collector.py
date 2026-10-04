@@ -1,6 +1,6 @@
 from pathlib import Path
-from collectors.backup_collector import BackupCollector
-from models.backup import BackupStatus
+from pulseops.collectors.backup_collector import BackupCollector
+from pulseops.models.backup import BackupStatus
 
 def test_parse_systemd_timers():
     fixture_path = Path("tests/fixtures/timers_output.txt")

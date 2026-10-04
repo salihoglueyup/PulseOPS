@@ -5,8 +5,8 @@ import uuid
 
 import pytest
 
-from collectors import probe_parsers as pp
-from models.docker import ContainerSecurity
+from pulseops.collectors import probe_parsers as pp
+from pulseops.models.docker import ContainerSecurity
 
 
 SAMPLE = (
@@ -33,10 +33,10 @@ def test_parse_docker_security_and_risks():
 
 
 def test_container_alerts_score_and_drift():
-    from collectors.audit_exporter import calculate_audit_score
-    from collectors.base import DemoCollector
-    from collectors.drift import HIGH, diff, fingerprint
-    from collectors.telemetry import collect_telemetry, summarize_alerts
+    from pulseops.collectors.audit_exporter import calculate_audit_score
+    from pulseops.collectors.base import DemoCollector
+    from pulseops.collectors.drift import HIGH, diff, fingerprint
+    from pulseops.collectors.telemetry import collect_telemetry, summarize_alerts
 
     t = collect_telemetry(DemoCollector())
     t.privileges.docker_access = True
@@ -66,8 +66,8 @@ def test_container_alerts_score_and_drift():
 @pytest.mark.skipif(os.environ.get("PULSEOPS_TEST_DOCKER") != "1" or not shutil.which("docker"),
                     reason="PULSEOPS_TEST_DOCKER=1 and a usable docker are needed")
 def test_live_docker_containers():
-    from collectors.probe_collector import ProbeCollector
-    from collectors.transport import LocalTransport
+    from pulseops.collectors.probe_collector import ProbeCollector
+    from pulseops.collectors.transport import LocalTransport
 
     tag = uuid.uuid4().hex[:8]
     risky, tame = f"pulseops-risky-{tag}", f"pulseops-tame-{tag}"

@@ -18,7 +18,8 @@ pytestmark = pytest.mark.skipif(not PORT, reason="no test sshd configured (PULSE
 HOST = os.environ.get("PULSEOPS_TEST_SSH_HOST", "127.0.0.1")
 USER = os.environ.get("PULSEOPS_TEST_SSH_USER", "")
 KEY = os.environ.get("PULSEOPS_TEST_SSH_KEY", "")
-CLI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cli.py")
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLI = ["-m", "pulseops"]
 
 
 @pytest.fixture
@@ -29,7 +30,7 @@ def home(tmp_path):
 
 
 def pulseops(env, *args):
-    r = subprocess.run([sys.executable, CLI, *args], env=env, capture_output=True, text=True,
+    r = subprocess.run([sys.executable, *CLI, *args], env=env, cwd=REPO, capture_output=True, text=True,
                        stdin=subprocess.DEVNULL, timeout=120)
     return r.returncode, r.stdout, r.stderr
 
@@ -89,8 +90,8 @@ def test_remote_probe_matches_privileges(home):
 
 
 def _collector(home_dir, monkeypatch):
-    from collectors.probe_collector import ProbeCollector
-    from collectors.transport import SSHTarget, SSHTransport
+    from pulseops.collectors.probe_collector import ProbeCollector
+    from pulseops.collectors.transport import SSHTarget, SSHTransport
 
     monkeypatch.setenv("HOME", str(home_dir))
     monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
@@ -128,7 +129,7 @@ def test_unreachable_host_fails_fast_and_recovers(home, monkeypatch):
     """While the host is down every poll fails quickly with a TransportError; afterwards it works again."""
     import time
 
-    from collectors.transport import TransportError
+    from pulseops.collectors.transport import TransportError
 
     home_dir, _ = home
     transport, collector = _collector(home_dir, monkeypatch)

@@ -1,9 +1,9 @@
 import pytest
 
-from collectors.base import DemoCollector
-from collectors.privilege_collector import parse_privileges_section, collect_local_privileges
-from models.privileges import PrivilegeInfo
-from ui.app import ServerTUIApp
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.privilege_collector import parse_privileges_section, collect_local_privileges
+from pulseops.models.privileges import PrivilegeInfo
+from pulseops.ui.app import ServerTUIApp
 from conftest import settle
 
 
@@ -79,6 +79,6 @@ async def test_no_privilege_warning_for_full_access():
 
 
 def test_collect_local_privileges_without_posix_uid(monkeypatch):
-    import collectors.privilege_collector as pc
+    import pulseops.collectors.privilege_collector as pc
     monkeypatch.delattr(pc.os, "geteuid")
     assert collect_local_privileges() == PrivilegeInfo()

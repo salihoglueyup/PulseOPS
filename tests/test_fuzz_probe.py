@@ -22,14 +22,14 @@ hypothesis = pytest.importorskip("hypothesis")
 from hypothesis import HealthCheck, given, settings, strategies as st  # noqa: E402
 from rich.console import Console  # noqa: E402
 
-from collectors.audit_exporter import generate_audit_markdown  # noqa: E402
-from collectors.drift import diff, fingerprint  # noqa: E402
-from collectors.probe import SECTION_PREFIX, build_script, parse_sections  # noqa: E402
-from collectors.probe_collector import ProbeCollector  # noqa: E402
-from collectors.telemetry import summarize_alerts  # noqa: E402
-from collectors.transport import LocalTransport, TransportError  # noqa: E402
-from commands import _telemetry_json, render_status  # noqa: E402
-from pulseops_config import Config  # noqa: E402
+from pulseops.collectors.audit_exporter import generate_audit_markdown  # noqa: E402
+from pulseops.collectors.drift import diff, fingerprint  # noqa: E402
+from pulseops.collectors.probe import SECTION_PREFIX, build_script, parse_sections  # noqa: E402
+from pulseops.collectors.probe_collector import ProbeCollector  # noqa: E402
+from pulseops.collectors.telemetry import summarize_alerts  # noqa: E402
+from pulseops.collectors.transport import LocalTransport, TransportError  # noqa: E402
+from pulseops.commands import _telemetry_json, render_status  # noqa: E402
+from pulseops.config import Config  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="needs a Linux probe corpus")
 
@@ -207,7 +207,7 @@ async def test_tui_renders_hostile_telemetry():
     import random
 
     from conftest import settle
-    from ui.app import ServerTUIApp
+    from pulseops.ui.app import ServerTUIApp
 
     rng = random.Random(1337)
     samples = []

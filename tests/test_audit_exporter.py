@@ -1,14 +1,14 @@
 from pathlib import Path
-from collectors.base import DemoCollector
-from collectors.audit_exporter import (
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.audit_exporter import (
     calculate_audit_score,
     generate_audit_markdown,
     export_audit_report,
 )
-from models.ports import ListeningPort, PortExposure
-from models.proxy import ProxyRoute
-from models.security import SecurityOverview, SSHSecurityAudit
-from models.storage import StorageOverview
+from pulseops.models.ports import ListeningPort, PortExposure
+from pulseops.models.proxy import ProxyRoute
+from pulseops.models.security import SecurityOverview, SSHSecurityAudit
+from pulseops.models.storage import StorageOverview
 
 def test_calculate_audit_score():
     collector = DemoCollector()

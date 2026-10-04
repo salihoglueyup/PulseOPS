@@ -4,11 +4,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-import cli
-from collectors import base as base_mod
-from collectors.base import DemoCollector
-from collectors.telemetry import collect_telemetry
-from notify import (
+from pulseops import cli
+from pulseops.collectors import base as base_mod
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.telemetry import collect_telemetry
+from pulseops.notify import (
     EmailChannel,
     Notification,
     NotifyConfig,
@@ -129,7 +129,7 @@ def test_escaping_helpers():
 
 
 def test_only_transitions_and_relevant_changes_notify():
-    from history import StoredChange
+    from pulseops.history import StoredChange
 
     cfg = NotifyConfig()
     info = StoredChange(ts=1, severity="INFO", category="port", message="kapandı")
@@ -144,7 +144,7 @@ def test_only_transitions_and_relevant_changes_notify():
 
 
 def test_check_sends_on_transition_and_recovery_only(receiver, tmp_path, monkeypatch, capsys):
-    import commands
+    from pulseops import commands
 
     url, received = receiver
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))

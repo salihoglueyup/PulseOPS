@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from collectors.probe_collector import ProbeCollector
-from collectors.transport import TransportError
+from pulseops.collectors.probe_collector import ProbeCollector
+from pulseops.collectors.transport import TransportError
 
 IMAGES = os.environ.get("PULSEOPS_TEST_DISTROS", "").split()
 PROVISION = os.environ.get("PULSEOPS_TEST_DISTRO_PROVISION") == "1"

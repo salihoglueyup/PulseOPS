@@ -1,5 +1,3 @@
 include README.md
 include LICENSE
-include requirements.txt
-include ui/styles.tcss
-recursive-include ui *.tcss
+recursive-include pulseops/ui *.tcss

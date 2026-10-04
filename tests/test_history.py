@@ -3,16 +3,16 @@ import time
 
 import pytest
 
-import cli
-from collectors.base import DemoCollector
-from collectors.drift import HIGH, INFO, MEDIUM, diff, fingerprint
-from collectors.telemetry import collect_telemetry
+from pulseops import cli
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.drift import HIGH, INFO, MEDIUM, diff, fingerprint
+from pulseops.collectors.telemetry import collect_telemetry
 from conftest import settle
-from history import HistoryStore, host_key
-from models.ports import ListeningPort, PortExposure
-from models.services import ServiceState, ServiceUnit
-from models.security import AccessAudit
-from ui.app import ServerTUIApp
+from pulseops.history import HistoryStore, host_key
+from pulseops.models.ports import ListeningPort, PortExposure
+from pulseops.models.services import ServiceState, ServiceUnit
+from pulseops.models.security import AccessAudit
+from pulseops.ui.app import ServerTUIApp
 
 
 @pytest.fixture
@@ -138,8 +138,8 @@ def test_samples_and_retention(tmp_path, base):
 
 
 def test_check_reports_drift_once_and_escalates(tmp_path, monkeypatch, capsys, base):
-    import commands
-    from collectors import base as base_mod
+    from pulseops import commands
+    from pulseops.collectors import base as base_mod
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     states = [base, base, changed(base, security__access__admin_users=["deploy", "mallory"]), base]
@@ -232,7 +232,7 @@ def test_old_baseline_port_format_still_compares(base):
 
 
 def test_parse_access_unknown_homes():
-    from collectors import probe_parsers as pp
+    from pulseops.collectors import probe_parsers as pp
 
     audit = pp.parse_access("#UID0\nroot\n#AUTHKEYS\nroot ?\ndeploy 2\n")
     assert audit.authorized_keys == {"deploy": 2} and audit.authorized_keys_unknown == ["root"]

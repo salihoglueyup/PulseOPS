@@ -1,12 +1,12 @@
 import pytest
 
-import cli
-from collectors.base import DemoCollector
-from commands import CollectorError, fleet_targets
+from pulseops import cli
+from pulseops.collectors.base import DemoCollector
+from pulseops.commands import CollectorError, fleet_targets
 from conftest import settle
-from history import HistoryStore
-from pulseops_config import Config
-from ui.fleet_app import FleetApp, state_for
+from pulseops.history import HistoryStore
+from pulseops.config import Config
+from pulseops.ui.fleet_app import FleetApp, state_for
 
 
 def config(**fleet):

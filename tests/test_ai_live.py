@@ -10,7 +10,8 @@ import pytest
 
 MODEL = os.environ.get("PULSEOPS_TEST_OLLAMA_MODEL")
 URL = os.environ.get("PULSEOPS_TEST_OLLAMA_URL", "http://127.0.0.1:11434")
-CLI = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cli.py")
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLI = ["-m", "pulseops"]
 
 pytestmark = pytest.mark.skipif(not MODEL, reason="PULSEOPS_TEST_OLLAMA_MODEL not set")
 
@@ -18,9 +19,9 @@ pytestmark = pytest.mark.skipif(not MODEL, reason="PULSEOPS_TEST_OLLAMA_MODEL no
 def pulseops(tmp_path, *args):
     cfg = tmp_path / "config" / "pulseops"
     cfg.mkdir(parents=True, exist_ok=True)
-    (cfg / "config.toml").write_text(f'[ai]\nurl = "{URL}"\nmodel = "{MODEL}"\ntimeout = 600\n')
+    (cfg / "config.toml").write_text(f'[ai]\nurl = "{URL}"\nmodel = "{MODEL}"\ntimeout = 300\nmax_tokens = 400\n')
     env = dict(os.environ, XDG_CONFIG_HOME=str(tmp_path / "config"), HOME=str(tmp_path))
-    r = subprocess.run([sys.executable, CLI, *args], env=env, capture_output=True, text=True, timeout=900)
+    r = subprocess.run([sys.executable, *CLI, *args], env=env, cwd=REPO, capture_output=True, text=True, timeout=900)
     return r.returncode, r.stdout, r.stderr
 
 

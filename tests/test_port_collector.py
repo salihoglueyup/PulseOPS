@@ -1,6 +1,6 @@
 from pathlib import Path
-from collectors.port_collector import PortCollector, classify_exposure
-from models.ports import PortExposure
+from pulseops.collectors.port_collector import PortCollector, classify_exposure
+from pulseops.models.ports import PortExposure
 
 def test_classify_exposure():
     # 127.0.0.1 is always SAFE_INTERNAL
@@ -32,7 +32,7 @@ def test_classify_exposure():
     assert classify_exposure("0.0.0.0", 49666, "svchost.exe") == PortExposure.SYSTEM_RPC
 
 def test_get_service_hint():
-    from collectors.port_collector import get_service_hint
+    from pulseops.collectors.port_collector import get_service_hint
     assert get_service_hint(5432, "com.docker.backend.exe") == "PostgreSQL (Docker)"
     assert get_service_hint(6379, "com.docker.backend.exe") == "Redis (Docker)"
     assert get_service_hint(445, "System") == "SMB (Dosya Paylasimi)"

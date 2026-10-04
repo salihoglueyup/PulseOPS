@@ -1,5 +1,5 @@
-from collectors.port_finder import find_available_ports
-from models.ports import ListeningPort, PortExposure
+from pulseops.collectors.port_finder import find_available_ports
+from pulseops.models.ports import ListeningPort, PortExposure
 
 def test_find_available_ports():
     used_ports = [

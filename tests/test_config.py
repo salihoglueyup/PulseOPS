@@ -1,9 +1,9 @@
 import pytest
 
-import cli
-from collectors.base import DemoCollector
-from collectors.telemetry import collect_telemetry, summarize_alerts
-from pulseops_config import AlertConfig, Config, ConfigError, init_user_config, load_config, render_config, tomllib
+from pulseops import cli
+from pulseops.collectors.base import DemoCollector
+from pulseops.collectors.telemetry import collect_telemetry, summarize_alerts
+from pulseops.config import AlertConfig, Config, ConfigError, init_user_config, load_config, render_config, tomllib
 
 
 def write(path, text):
@@ -66,7 +66,7 @@ def test_alert_thresholds_are_configurable():
 
 def test_check_uses_config_thresholds_and_flags_win(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.setattr("pulseops_config.SYSTEM_CONFIG", tmp_path / "none.toml")
+    monkeypatch.setattr("pulseops.config.SYSTEM_CONFIG", tmp_path / "none.toml")
     write(tmp_path / "pulseops" / "config.toml", "[check]\nwarn = 60\ncrit = 40\n")
 
     def run(argv):
@@ -85,7 +85,7 @@ def test_check_uses_config_thresholds_and_flags_win(tmp_path, monkeypatch, capsy
 
 def test_use_sudo_reaches_the_collector(tmp_path, monkeypatch):
     import argparse
-    from commands import build_collector
+    from pulseops.commands import build_collector
 
     write(tmp_path / "config" / "pulseops" / "config.toml", "[general]\nuse_sudo = false\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))

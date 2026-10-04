@@ -3,8 +3,8 @@ import stat
 
 import pytest
 
-import cli
-import scheduler
+from pulseops import cli
+from pulseops import scheduler
 
 
 def run(argv, capsys):

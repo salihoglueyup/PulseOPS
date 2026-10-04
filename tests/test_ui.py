@@ -1,11 +1,11 @@
 import pytest
 from pathlib import Path
-from collectors.base import DemoCollector
-from ui.app import ServerTUIApp
+from pulseops.collectors.base import DemoCollector
+from pulseops.ui.app import ServerTUIApp
 from textual.widgets import TabbedContent
-from ui.modals.port_finder_modal import PortFinderModal
-from ui.modals.alerts_modal import AlertsModal
-from ui.modals.config_viewer_modal import ConfigViewerModal
+from pulseops.ui.modals.port_finder_modal import PortFinderModal
+from pulseops.ui.modals.alerts_modal import AlertsModal
+from pulseops.ui.modals.config_viewer_modal import ConfigViewerModal
 from conftest import settle
 
 @pytest.mark.asyncio

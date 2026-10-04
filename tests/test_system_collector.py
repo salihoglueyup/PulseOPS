@@ -1,5 +1,5 @@
-from collectors.system_collector import SystemCollector
-from models.system import SystemSnapshot
+from pulseops.collectors.system_collector import SystemCollector
+from pulseops.models.system import SystemSnapshot
 
 def test_system_collector_local_snapshot():
     collector = SystemCollector()

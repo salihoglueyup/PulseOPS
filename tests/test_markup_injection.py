@@ -10,10 +10,10 @@ from pydantic import BaseModel
 from rich.console import Console
 from rich.text import Text
 
-from collectors.base import DemoCollector
+from pulseops.collectors.base import DemoCollector
 from conftest import settle
-from ui.app import ServerTUIApp
-from ui.modals.alerts_modal import AlertsModal
+from pulseops.ui.app import ServerTUIApp
+from pulseops.ui.modals.alerts_modal import AlertsModal
 
 EVIL_HOST = "evil.example"
 PAYLOADS = ("[/]", f"[link=https://{EVIL_HOST}]x[/link]", "[bold red]")
@@ -129,9 +129,9 @@ async def test_normal_data_has_no_literal_markup_tags():
 def test_cli_status_and_report_are_safe(payload, tmp_path):
     from io import StringIO
 
-    from collectors.audit_exporter import generate_audit_markdown
-    from collectors.telemetry import collect_telemetry
-    from commands import render_status
+    from pulseops.collectors.audit_exporter import generate_audit_markdown
+    from pulseops.collectors.telemetry import collect_telemetry
+    from pulseops.commands import render_status
 
     t = collect_telemetry(HostileCollector(payload))
     t.security = poison(t.security, payload)
@@ -149,9 +149,9 @@ def test_cli_status_and_report_are_safe(payload, tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("payload", PAYLOADS)
 async def test_history_views_are_safe(payload, tmp_path, monkeypatch, capsys):
-    import cli
-    from history import HistoryStore, host_key
-    from ui.modals.history_modal import HistoryModal
+    from pulseops import cli
+    from pulseops.history import HistoryStore, host_key
+    from pulseops.ui.modals.history_modal import HistoryModal
 
     store = HistoryStore(tmp_path / "h.db")
     t = HostileCollector(payload).collect()
@@ -171,7 +171,7 @@ async def test_history_views_are_safe(payload, tmp_path, monkeypatch, capsys):
     plain = "".join(seg.text for seg in Console(width=200, file=open("/dev/null", "w")).render(modal._build_content()))
     assert "user" + payload in plain
 
-    monkeypatch.setattr("history.default_history_path", lambda: tmp_path / "h.db")
+    monkeypatch.setattr("pulseops.history.default_history_path", lambda: tmp_path / "h.db")
     with pytest.raises(SystemExit):
         cli.main(["history", host_key(t)[:8]])
     assert "user" + payload in capsys.readouterr().out
