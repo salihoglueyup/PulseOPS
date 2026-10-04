@@ -107,10 +107,18 @@ def test_probe_on_distro(container, user):
     if user != "nobody":
         assert priv.elevated, (image, priv)
         assert any(p.process_name and "sshd" in p.process_name for p in ssh_ports), (image, user, ssh_ports)
-        # Stock sshd_config on every distro: key auth on, root login not plainly "yes"
+        # Distros ship different defaults (RHEL: root login allowed); what matters is that we report
+        # exactly what sshd itself says its effective configuration is
+        effective = dict(
+            line.split(" ", 1) for line in subprocess.run(
+                ["docker", "exec", name, "/usr/sbin/sshd", "-T"], capture_output=True, text=True,
+            ).stdout.splitlines() if " " in line
+        )
         ssh = t.security.ssh
-        assert ssh.port == 22 and ssh.pubkey_authentication == "yes", (image, ssh)
-        assert ssh.permit_root_login in ("prohibit-password", "without-password", "no"), (image, ssh)
+        assert ssh.port == 22, (image, ssh)
+        assert (ssh.permit_root_login, ssh.password_authentication, ssh.pubkey_authentication) == (
+            effective["permitrootlogin"], effective["passwordauthentication"], effective["pubkeyauthentication"],
+        ), (image, ssh, effective)
         assert t.security.access.sudoers_known and "deploy" in t.security.access.sudo_rule_users, (image, t.security.access)
         assert any("deploy" in rule for rule in t.security.access.nopasswd_rules), (image, t.security.access)
     else:

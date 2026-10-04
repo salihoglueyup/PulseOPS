@@ -7,8 +7,15 @@ if command -v apk >/dev/null; then
     apk add -q openssh iproute2 procps-ng sudo shadow
 elif command -v apt-get >/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
+    pkgs="iproute2 procps openssh-server sudo"
     apt-get update -q >/dev/null
-    apt-get install -y -q --no-install-recommends iproute2 procps openssh-server sudo >/dev/null
+    if ! apt-get install -y -q --no-install-recommends $pkgs >/dev/null; then
+        # Releases past their security support (e.g. Debian 11) lose their -security pool
+        sed -i '/-security/d' /etc/apt/sources.list 2>/dev/null || true
+        rm -f /etc/apt/sources.list.d/*security* 2>/dev/null || true
+        apt-get update -q >/dev/null
+        apt-get install -y -q --no-install-recommends $pkgs >/dev/null
+    fi
 elif command -v dnf >/dev/null; then
     dnf install -y -q iproute procps-ng openssh-server sudo shadow-utils >/dev/null
 else
