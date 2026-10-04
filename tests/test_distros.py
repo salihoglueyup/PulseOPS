@@ -117,7 +117,9 @@ def test_probe_on_distro(container, user):
         ssh = t.security.ssh
         assert ssh.port == 22, (image, ssh)
         assert (ssh.permit_root_login, ssh.password_authentication, ssh.pubkey_authentication) == (
-            effective["permitrootlogin"], effective["passwordauthentication"], effective["pubkeyauthentication"],
+            # `sshd -T` prints the legacy alias of prohibit-password
+            effective["permitrootlogin"].replace("without-password", "prohibit-password"),
+            effective["passwordauthentication"], effective["pubkeyauthentication"],
         ), (image, ssh, effective)
         assert t.security.access.sudoers_known and "deploy" in t.security.access.sudo_rule_users, (image, t.security.access)
         assert any("deploy" in rule for rule in t.security.access.nopasswd_rules), (image, t.security.access)

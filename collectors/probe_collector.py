@@ -23,7 +23,7 @@ from models.backup import BackupData
 from models.docker import ContainerSummary
 from models.privileges import PrivilegeInfo
 from models.security import AccessAudit, AuthActivity, Fail2banStatus, SSHSecurityAudit
-from models.services import ServiceUnit
+from models.services import ServiceState, ServiceUnit
 from models.storage import StorageOverview
 from models.system import CpuMetric, DiskIoRate, FirewallStatus, NetworkRate, ProcessInfo, SystemSnapshot
 from models.telemetry import Telemetry
@@ -286,7 +286,10 @@ class ProbeCollector(BaseCollector):
         critical_prefixes = tuple(name.split(".")[0] for name, _ in CRITICAL_SERVICES)
         critical = [sv for sv in services if sv.name.startswith(critical_prefixes)]
         others = [sv for sv in services if sv not in critical]
-        self._services_list = critical + others[:MAX_OTHER_SERVICES]
+        # The list is capped for display, but a failed unit must never fall off it (alerts, drift)
+        failed = [sv for sv in others if sv.state == ServiceState.FAILED]
+        healthy = [sv for sv in others if sv.state != ServiceState.FAILED]
+        self._services_list = critical + failed + healthy[:max(0, MAX_OTHER_SERVICES - len(failed))]
 
         tasks = self._backup.parse_timers_text(s.get("TIMERS", "")) + self._backup.parse_crontab_text(s.get("CRONTAB", ""))
         names, sizes, shas = pp.parse_backup_files(s.get("BACKUP_FILES", ""))
