@@ -110,7 +110,7 @@ Amaç: Bir güvenlik/gözlem aracının kendisi güvenli olsun; güvenlik paneli
   geçersiz kullanıcı, başarılı, şifreyle giriş, en çok deneyen IP/kullanıcı, son girişler), UID 0 hesaplar,
   sudo/wheel üyeleri, `NOPASSWD` kuralları, `authorized_keys` sayıları; uyarılar ve sağlık skoru
 - ✅ Salt-okunur garantisi: `pulseops probe` ile çalıştırılan betik görülebilir; CI'da betik değiştiren
-  komutlar için otomatik tarama (mutasyon testiyle doğrulandı); [docs/SECURITY.md](../SECURITY.md)
+  komutlar için otomatik tarama (mutasyon testiyle doğrulandı); [docs/security.md](security.md)
 - ✅ CI'da gerçek sshd ile entegrasyon testleri (host key, ProxyJump, root olmayan + sudo'lu kullanıcı)
 
 Bu fazda bulunan ve düzeltilen hatalar:
@@ -189,3 +189,16 @@ Bu fazda bulunan ve düzeltilen hatalar:
   `--show-prompt` ile şeffaflık
 - ✅ Testler: Ollama API'sini (akışlı `/api/chat`, `/api/tags`, hatalar) taklit eden sunucu ile CLI ve TUI;
   CI'da gerçek `ollama/ollama` konteyneri ve küçük bir modelle (qwen2.5:0.5b) uçtan uca
+- Gerçek modelle bulunan hata: döngüye giren küçük model sonsuza kadar metin üretiyordu (zaman aşımı yalnızca
+  sessizliği ölçüyordu); token sınırı, tekrar cezası ve toplam süre sınırı eklendi
+
+## Faz 7 — Düzen ve Sağlamlık ✅
+
+- ✅ Depo düzeni: tüm kod tek `pulseops/` paketinde (`python -m pulseops`), yardımcı betikler `scripts/`,
+  paketleme `packaging/`; `requirements.txt`, `main.py` ve gereksiz dosyalar kaldırıldı; tek bağımlılık kaynağı
+  `pyproject.toml`
+- ✅ Belgeler baştan düzenlendi: `docs/` altında kurulum, arayüz, uzak sunucular, otomasyon, denetimler, AI,
+  yapılandırma (koddan üretilir ve testle eşitlenir), güvenlik, mimari, geliştirme
+- ✅ Uzun fuzzing ve her ayrıştırıcı değeri için kapsamlı düşmanca değer testi; bulunan çökmeler: Unicode
+  rakamlar (`"²".isdigit()`), `nan`/`inf` sayılar, taşan zaman damgası, bozuk fail2ban çıktısı, `=` içeren
+  kullanıcı adı

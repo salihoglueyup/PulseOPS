@@ -73,6 +73,12 @@ belirlenebilir. Hiçbiri terminal markup'ı olarak yorumlanmaz: `GET /[/]` gibi 
 `status` ve `report` çıktısını kötü niyetli veriyle dener). Probe bölüm işaretleri çalıştırma başına rastgele
 bir nonce içerir; komut çıktısı sahte bölüm enjekte edemez.
 
+Ayrıştırıcılar bozuk veya kötü niyetli çıktıda çökmemelidir. Bunu iki test katmanı doğrular
+([Geliştirme](development.md#test-katmanları)): gerçek probe çıktısını rastgele bozan bir fuzzer (Hypothesis) ve
+her ayrıştırıcı girdisindeki her bir değeri sırayla `nan`, `inf`, `²`, `-1`, çok büyük sayı, Rich markup gibi
+16 düşmanca değerle değiştiren kapsamlı bir test. Bu testler; Unicode rakamlar (`"²".isdigit()` doğru ama
+`int("²")` hata verir), `nan` uptime, taşan zaman damgası ve bozuk fail2ban çıktısı gibi gerçek çökmeleri buldu.
+
 ## 6. PulseOps'un yerelde yazdığı dosyalar
 
 | Dosya | Ne zaman |

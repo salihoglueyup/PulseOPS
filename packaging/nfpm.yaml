@@ -39,7 +39,9 @@ contents:
     dst: /usr/share/doc/pulseops/README.md
   - src: LICENSE
     dst: /usr/share/doc/pulseops/LICENSE
-  - src: docs/SECURITY.md
-    dst: /usr/share/doc/pulseops/SECURITY.md
+  - src: docs/security.md
+    dst: /usr/share/doc/pulseops/security.md
+  - src: docs/configuration.md
+    dst: /usr/share/doc/pulseops/configuration.md
   - src: packaging/config.example.toml
     dst: /usr/share/doc/pulseops/config.example.toml

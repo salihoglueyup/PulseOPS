@@ -95,3 +95,22 @@ def test_use_sudo_reaches_the_collector(tmp_path, monkeypatch):
     collector = build_collector(args)
     if hasattr(collector, "_sudo"):
         assert collector._sudo is False
+
+
+def test_configuration_doc_matches_the_code():
+    """docs/configuration.md embeds `pulseops config` output; regenerate it when settings change."""
+    from pathlib import Path
+    doc = (Path(__file__).parent.parent / "docs" / "configuration.md").read_text(encoding="utf-8")
+    block = doc.split("```toml\n", 1)[1].split("```", 1)[0]
+    assert block.strip() == render_config(Config()).strip()
+
+
+def test_packaged_example_config_matches_the_code():
+    """packaging/config.example.toml ships in the .deb/.rpm; it must list every current setting."""
+    from pathlib import Path
+    from pulseops.config import TEMPLATE_HEADER
+    example = (Path(__file__).parent.parent / "packaging" / "config.example.toml").read_text(encoding="utf-8")
+    body = render_config(Config(), commented=True)
+    assert example.endswith(body), "regenerate packaging/config.example.toml (see docs/development.md)"
+    assert tomllib.loads(example) == {name: {} for name in Config.model_fields}
+    assert example.startswith(TEMPLATE_HEADER.split("\n", 1)[0])

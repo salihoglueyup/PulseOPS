@@ -35,12 +35,13 @@ ENV/
 
 # Testing & Coverage
 .pytest_cache/
+.hypothesis/
+.ruff_cache/
 .coverage
 htmlcov/
 
 # Logs
 *.log
 
-# PulseOps Generated Reports & Artifacts
-audit-reports/*.md
-!audit-reports/.gitkeep
+# PulseOps generated reports (created on demand by `pulseops report` / `e`)
+audit-reports/
