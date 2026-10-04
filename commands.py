@@ -826,10 +826,13 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
 
     from installer import add_installer_subcommands
     add_installer_subcommands(sub)
+    from scheduler import add_schedule_subcommand
+    add_schedule_subcommand(sub)
     return parser
 
 
-SUBCOMMANDS = ("status", "report", "check", "fleet", "history", "notify", "config", "probe", "update", "uninstall", "version")
+SUBCOMMANDS = ("status", "report", "check", "fleet", "history", "notify", "config", "probe", "schedule", "update", "uninstall",
+               "version")
 
 
 def cmd_probe(args: argparse.Namespace) -> int:

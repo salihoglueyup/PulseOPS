@@ -153,6 +153,18 @@ hiç yazılmaz.
 
 > **İpucu:** Tüm komutlar uzak sunucu için de çalışır: `pulseops check root@sunucu --key ~/.ssh/id_ed25519`
 
+**Cron yerine systemd zamanlayıcısı:** `pulseops schedule` gerekli birimleri yazar ve etkinleştirir
+(root: `/etc/systemd/system`, diğer kullanıcılar: `~/.config/systemd/user`). WARNING/CRITICAL/UNKNOWN
+sonuçları birimi "failed" yapmaz; uyarılar `[notify]` kanallarından gider.
+
+```bash
+sudo pulseops schedule install                          # her 5 dakikada `pulseops check`
+sudo pulseops schedule install --every 1m --args "check --all -f prometheus -o /var/lib/node_exporter/textfile/pulseops.prom"
+pulseops schedule show                                  # yazılacak birimleri yalnızca göster
+pulseops schedule status                                # son çalışma ve sıradaki zaman
+sudo pulseops schedule remove
+```
+
 
 ### 5. Değişiklik Tespiti & Geçmiş
 

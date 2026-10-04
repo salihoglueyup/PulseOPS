@@ -17,6 +17,7 @@ EPILOG = """komutlar:
   pulseops probe [--tier ...]   sunucuda çalışan salt-okunur betiği göster (denetim)
   pulseops history [--since]    kayıtlı trendler ve güvenlik değişiklikleri
   pulseops notify --test        bildirim kanallarını dene
+  pulseops schedule install     check'i systemd zamanlayıcısıyla düzenli çalıştır
   pulseops update | uninstall   kendini günceller / kaldırır
   pulseops version              sürüm bilgisi
 """
