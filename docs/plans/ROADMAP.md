@@ -138,3 +138,44 @@ Bu fazda bulunan ve düzeltilen hatalar:
 - ✅ `.deb` / `.rpm` paketleri (nfpm v2.43.0, `/usr/bin/pulseops`, yalnızca `glibc >= 2.28` bağımlılığı,
   örnek yapılandırma ve belgeler `/usr/share/doc/pulseops/`); release'de `.deb` gerçekten `apt` ile kurulup
   test ediliyor; paketle kurulumda `update`/`uninstall` paket yöneticisine yönlendiriyor
+
+## Faz 6 — Sağlamlaştırma & SOC Özellikleri ✅
+
+- ✅ **v1.2.0 yayınlandı** (değişiklik tespiti, bildirimler, filo, `.deb`/`.rpm`); yayın dosyaları, SHA-256,
+  `curl | bash` kurulumu, v1.1.0'dan `update` ve paketlerin Debian 11 / Ubuntu 22.04 / Alma 8'de kurulumu doğrulandı
+
+### Test altyapısı
+- ✅ **Dağıtım matrisi (CI):** probe Ubuntu 20.04/22.04/24.04, Debian 11/12, AlmaLinux 8/9, Alpine 3.20
+  container'larında root ve `nobody` olarak; çıplak imaj ve kurulu sunucu (ss, ps, sshd, sudo'lu kullanıcı) olarak
+- ✅ **Fuzzing (Hypothesis):** gerçek probe çıktısı bölüm bölüm bozularak (rastgele metin, Rich markup, kaçış
+  dizileri, satır silme/çoğaltma, kesme) tüm hat çalıştırılır: toplayıcı, uyarılar, değişiklik tespiti, `status`,
+  JSON, rapor ve TUI'nin tüm sekmeleri. Kasten kırılgan bir parser ekleyerek fuzzer'ın hatayı yakaladığı doğrulandı
+- ✅ **Ölçek:** 8000 süreç, 3000 port, 300 konteyner, 1500 servis: toplama < 0.2 sn, TUI turu ~40 ms
+- ✅ **Dayanıklılık:** gerçek sshd ile bağlantı kopması (sunucu oturumu öldürür / soket ölür) ve erişilemeyen
+  sunucu; 10 dk boyunca 0.25 sn aralıkla (~2400 tur) bellek: 73.0 → 74.5 MB, ikinci yarıda sabit
+
+### Bu fazda bulunan ve düzeltilen hatalar
+- Overlay kök dosya sistemli sunucularda (LXC/OpenVZ VPS, container) **kök disk hiç görünmüyordu**
+- Kendi sudoers kuralıyla yetki verilen kullanıcılar (`deploy ALL=(ALL) ALL`, sudo/wheel üyesi olmadan) görünmüyordu
+- 25'ten fazla servisi olan sunucularda listenin sonundaki **çökmüş servisler** panelde, uyarılarda ve
+  değişiklik tespitinde görünmüyordu
+- Uzun sekmeler (Portlar, Güvenlik, Servisler...) kaydırılamıyordu: 80x24 SSH terminalinde içeriğin büyük
+  kısmına ulaşılamıyordu
+- Rapordaki konteyner ve yedek satırları Markdown kaçışlaması olmadan yazılıyordu
+- Dağıtılmış ikinci bir CSS kopyası (`theme_css.py`) gerçek stil dosyasından sapmıştı; kaldırıldı
+
+### Yeni özellikler
+- ✅ **Güvenlik güncellemeleri & yeniden başlatma:** apt (simülasyon), dnf (yalnızca önbellek), apk; metadata yaşı;
+  `reboot-required`, `needs-restarting`, kurulu daha yeni çekirdek. Paket önbelleği yoksa "okunamadı", asla "0"
+- ✅ **Sistem sertleştirme (CIS tarzı):** sysctl'ler, `/tmp` bağlama seçenekleri, kimlik dosyası izinleri, `/tmp` ve
+  `/home` altında SUID, herkesin yazabildiği sistem dosyaları, boş parolalı hesaplar. Container'da gerçek saldırgan
+  kalıcılık teknikleri (SUID kabuk, boş parola, okunabilir `shadow`) ile doğrulandı
+- ✅ **Konteyner güvenliği:** `--privileged`, Docker soketi, host dizinleri, tehlikeli yetenekler, host ağı/PID,
+  root kullanıcı, sağlıksız ve sürekli yeniden başlayan konteynerler; gerçek konteynerlerle CI testi
+- ✅ **Makine çıktıları:** `check -f json` ve `-f prometheus -o FILE` (node_exporter textfile, atomik yazım)
+- ✅ **`pulseops schedule`:** cron yerine systemd zamanlayıcısı; CI'da gerçek kurulum, çalıştırma ve kaldırma
+- Salt-okunur koruma testi paket yöneticilerini de kapsıyor (`-s`'siz apt, `-C`'siz dnf yasak; mutasyon testli)
+
+## Sıradaki
+
+- ⬜ Faz 4 — Ollama ile yerel AI: uyarı ve değişikliklerin yorumlanması, SOC asistanı
