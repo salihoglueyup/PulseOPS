@@ -67,6 +67,18 @@ def _soc_section(security: SecurityOverview) -> list[str]:
             lines.append(f"* **Güvenlik yaması bekleyen paketler:** {', '.join(f'`{_md(p)}`' for p in upd.security_packages)}")
         if upd.reboot_required:
             lines.append(f"* **Yeniden başlatma gerekli:** {_md(upd.reboot_reason)}")
+
+    hard = security.hardening
+    if hard.known:
+        lines.append("")
+        lines.append(f"### Sistem sertleştirme ({_md(hard.summary)})")
+        lines.append("")
+        lines.append("| Durum | Önem | Kontrol | Değer |")
+        lines.append("| :--- | :--- | :--- | :--- |")
+        for c in sorted(hard.checks, key=lambda c: (c.passed, c.severity != "HIGH")):
+            lines.append(f"| {'✓' if c.passed else '✗'} | {c.severity} | {_md(c.title)} | {_md(c.detail)} |")
+        lines.append("")
+        lines.append(f"* **SUID/SGID dosyalar (sistem dizinleri):** {len(hard.suid_files)}")
     return lines
 
 
@@ -106,6 +118,12 @@ def calculate_audit_score(
         score -= 10
     if security and security.updates.reboot_required:
         score -= 5
+
+    # Failed hardening checks: -15 per critical one, -3 per medium one (at most -9)
+    if security:
+        failed = security.hardening.failed
+        score -= 15 * sum(1 for c in failed if c.severity == "HIGH")
+        score -= min(9, 3 * sum(1 for c in failed if c.severity == "MEDIUM"))
 
     # 502 / 504 Bad Gateway routes (-10 each)
     bad_routes = [r for r in routes if r.http_status in (502, 504)]

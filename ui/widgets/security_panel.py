@@ -75,6 +75,7 @@ class SecurityPanel(Widget):
         cards_table.add_row(ssh_text, fw_text, port_text, badge)
         grid.add_row(Panel(cards_table, border_style="#30363d", padding=(0, 1)))
         grid.add_row(self._render_soc(sec))
+        grid.add_row(self._render_hardening(sec))
 
         # Bottom recommendations list
         rec_table = Table(expand=True, box=None, padding=(0, 1))
@@ -104,6 +105,34 @@ class SecurityPanel(Widget):
             border_style="#30363d",
             padding=(0, 0),
         )
+
+    def _render_hardening(self, sec: SecurityOverview) -> Panel:
+        hard = sec.hardening
+        title = f"[bold #f0f6fc]SİSTEM SERTLEŞTİRME · {hard.summary.upper()}[/bold #f0f6fc]"
+        if not hard.known:
+            return Panel(Text("Sertleştirme denetimi bir sonraki ağır taramada gelecek.", style=DIM),
+                         title=title, border_style="#30363d", padding=(0, 1))
+        table = Table(expand=True, box=None, padding=(0, 1))
+        table.add_column("", width=3)
+        table.add_column("KONTROL", ratio=3)
+        table.add_column("DEĞER", ratio=2)
+        order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+        for c in sorted(hard.checks, key=lambda c: (c.passed, order.get(c.severity, 3))):
+            style = GOOD if c.passed else BAD if c.severity == "HIGH" else WARN if c.severity == "MEDIUM" else DIM
+            table.add_row(Text("✓" if c.passed else "✗", style=style), Text(c.title, style="#f0f6fc"),
+                          Text(c.detail, style=DIM))
+        extra = Text(f"SUID/SGID (sistem dizinleri): {len(hard.suid_files)} dosya", style=DIM)
+        if hard.suspicious_suid is None:
+            extra.append("  ·  /tmp ve /home taraması için root gerekli", style=DIM)
+        if hard.empty_password_users is None:
+            extra.append("  ·  boş parola kontrolü için root gerekli", style=DIM)
+        if hard.ip_forward:
+            extra.append("  ·  IP yönlendirme açık (Docker/router için normal)", style=DIM)
+        grid = Table.grid(expand=True)
+        grid.add_column()
+        grid.add_row(table)
+        grid.add_row(extra)
+        return Panel(grid, title=title, border_style="#30363d", padding=(0, 1))
 
     def _render_soc(self, sec: SecurityOverview) -> Panel:
         f2b, auth, access = sec.fail2ban, sec.auth, sec.access

@@ -5,7 +5,8 @@ from pathlib import Path
 from models.system import FirewallStatus
 from typing import Optional
 
-from models.security import AccessAudit, AuthActivity, Fail2banStatus, SecurityOverview, SSHSecurityAudit, UpdateStatus
+from models.security import (AccessAudit, AuthActivity, Fail2banStatus, HardeningAudit, SecurityOverview,
+                             SSHSecurityAudit, UpdateStatus)
 from models.ports import ListeningPort, PortExposure
 
 class SecurityCollector:
@@ -89,6 +90,7 @@ class SecurityCollector:
         access: Optional[AccessAudit] = None,
         failed_login_threshold: int = 100,
         updates: Optional[UpdateStatus] = None,
+        hardening: Optional[HardeningAudit] = None,
     ) -> SecurityOverview:
         """Combines SSH audit, firewall state, listening ports and access data into the security overview."""
         fail2ban = fail2ban or Fail2banStatus()
@@ -138,6 +140,8 @@ class SecurityCollector:
         recs.extend(soc_recommendations(ssh_audit, fail2ban, auth, access, failed_login_threshold))
         updates = updates or UpdateStatus()
         recs.extend(update_recommendations(updates))
+        hardening = hardening or HardeningAudit()
+        recs.extend(hardening_recommendations(hardening))
 
         if not recs:
             recs.append("[GUVENLI] Sunucu temel guvenlik kurallarina uygun ve sertlestirilmis durumda.")
@@ -161,7 +165,22 @@ class SecurityCollector:
             auth=auth,
             access=access,
             updates=updates,
+            hardening=hardening,
         )
+
+
+def hardening_recommendations(hardening: HardeningAudit) -> list[str]:
+    recs = []
+    for check in hardening.failed:
+        if check.severity == "HIGH":
+            recs.append(f"[DIKKAT] Sertlestirme: {check.title} - BASARISIZ ({check.detail})")
+    medium = [c for c in hardening.failed if c.severity == "MEDIUM"]
+    if medium:
+        recs.append("[UYARI] Sertlestirme: " + "; ".join(c.detail or c.title for c in medium)
+                    + " (/etc/sysctl.d/ altinda kalici yapin)")
+    if hardening.suspicious_suid is None and hardening.known:
+        recs.append("[BILGI] /tmp ve /home altindaki SUID dosya taramasi icin root gerekli.")
+    return recs
 
 
 def update_recommendations(updates: UpdateStatus) -> list[str]:

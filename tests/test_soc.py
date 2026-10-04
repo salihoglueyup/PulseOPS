@@ -221,3 +221,76 @@ def test_updates_raise_alerts_and_lower_the_score():
     alerts = summarize_alerts(t)
     assert "4 güvenlik güncellemesi bekliyor" in alerts and any("Yeniden başlatma" in a for a in alerts)
     assert calculate_audit_score(t.snapshot, t.ports, t.routes, t.security, t.storage)[0] == base - 15
+
+
+HARDEN_SAMPLE = """#SYSCTL
+kernel/randomize_va_space 2
+fs/protected_symlinks 0
+net/ipv4/tcp_syncookies 1
+net/ipv4/conf/all/rp_filter 0
+net/ipv4/conf/default/rp_filter 2
+net/ipv4/ip_forward 1
+#MOUNTS
+/tmp rw,nosuid,nodev,relatime
+/dev/shm rw,relatime
+#PERMS
+644 root /etc/passwd
+644 root /etc/shadow
+440 root /etc/sudoers
+#SUID
+/usr/bin/sudo
+/usr/bin/passwd
+#SUID_SUSPECT
+/tmp/.x/bash
+#WORLD_WRITABLE
+#EMPTY_PASSWORD
+guest
+"""
+
+
+def test_parse_hardening():
+    h = pp.parse_hardening(HARDEN_SAMPLE)
+    by_id = {c.id: c for c in h.checks}
+    assert h.known and h.ip_forward
+    assert by_id["sysctl:kernel/randomize_va_space"].passed
+    assert not by_id["sysctl:fs/protected_symlinks"].passed
+    assert by_id["sysctl:net/ipv4/conf/all/rp_filter"].passed  # effective value is max(all, default)
+    assert by_id["mount:/tmp"].passed and not by_id["mount:/dev/shm"].passed
+    assert not by_id["perm:/etc/shadow"].passed and by_id["perm:/etc/passwd"].passed
+    assert h.suspicious_suid == ["/tmp/.x/bash"] and h.empty_password_users == ["guest"]
+    assert {c.problem for c in h.failed if c.severity == "HIGH"} == {
+        "/etc/shadow herkes tarafından okunabiliyor",
+        "Şüpheli konumda SUID/SGID dosya: /tmp/.x/bash",
+        "Boş parolalı hesap: guest",
+    }
+    assert h.summary == f"{len(h.checks) - len(h.failed)}/{len(h.checks)} kontrol geçti, 3 kritik"
+
+
+def test_parse_hardening_unknowns():
+    h = pp.parse_hardening("#SYSCTL\n#SUID_SUSPECT\nUNKNOWN\n#WORLD_WRITABLE\n#EMPTY_PASSWORD\nUNKNOWN\n")
+    assert h.known and h.suspicious_suid is None and h.empty_password_users is None
+    assert {c.id for c in h.checks} == {"files:world-writable"}  # nothing unreadable is counted as passed
+    assert not pp.parse_hardening("").known
+
+
+def test_hardening_alerts_score_and_drift():
+    from collectors.audit_exporter import calculate_audit_score
+    from collectors.base import DemoCollector
+    from collectors.drift import HIGH, diff, fingerprint
+    from collectors.telemetry import collect_telemetry, summarize_alerts
+
+    t = collect_telemetry(DemoCollector())
+    base, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, t.security, t.storage)
+    clean = t.model_copy(deep=True)
+    clean.security.hardening = pp.parse_hardening(
+        "#SYSCTL\nfs/protected_symlinks 1\n#SUID\n/usr/bin/sudo\n#SUID_SUSPECT\n#WORLD_WRITABLE\n#EMPTY_PASSWORD\n")
+    t.security.hardening = pp.parse_hardening(HARDEN_SAMPLE)
+
+    assert "Boş parolalı hesap: guest" in summarize_alerts(t)
+    # 3 HIGH (-45) and 1 MEDIUM (-3)
+    assert calculate_audit_score(t.snapshot, t.ports, t.routes, t.security, t.storage)[0] == max(15, base - 48)
+    changes = {(c.severity, c.message) for c in diff(fingerprint(clean), fingerprint(t))}
+    assert (HIGH, "Yeni SUID/SGID dosya: /usr/bin/passwd") in changes
+    assert (HIGH, "Şüpheli konumda SUID/SGID dosya: /tmp/.x/bash") in changes
+    assert (HIGH, "Parolası boşaltılan hesap: guest") in changes
+    assert (HIGH, "Dosya izni bozuldu: /etc/shadow herkes tarafından okunabiliyor") in changes

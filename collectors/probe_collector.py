@@ -22,7 +22,8 @@ from collectors import probe_parsers as pp
 from models.backup import BackupData
 from models.docker import ContainerSummary
 from models.privileges import PrivilegeInfo
-from models.security import AccessAudit, AuthActivity, Fail2banStatus, SSHSecurityAudit, UpdateStatus
+from models.security import (AccessAudit, AuthActivity, Fail2banStatus, HardeningAudit, SSHSecurityAudit,
+                             UpdateStatus)
 from models.services import ServiceState, ServiceUnit
 from models.storage import StorageOverview
 from models.system import CpuMetric, DiskIoRate, FirewallStatus, NetworkRate, ProcessInfo, SystemSnapshot
@@ -88,6 +89,7 @@ class ProbeCollector(BaseCollector):
         self._auth = AuthActivity()
         self._access = AccessAudit()
         self._updates = UpdateStatus()
+        self._hardening = HardeningAudit()
         self._logs: list[str] = []
 
     # --- public API -------------------------------------------------------------------------
@@ -144,6 +146,7 @@ class ProbeCollector(BaseCollector):
             security=self._security.build_overview(
                 self._ssh_audit, self._firewall, ports, self._fail2ban, self._auth, self._access,
                 failed_login_threshold=self.failed_login_threshold, updates=self._updates,
+                hardening=self._hardening,
             ),
             storage=storage,
             privileges=self._privileges,
@@ -323,6 +326,7 @@ class ProbeCollector(BaseCollector):
         self._auth = pp.parse_auth(s.get("AUTH", ""))
         self._access = pp.parse_access(s.get("ACCESS", ""))
         self._updates = pp.parse_updates(s.get("UPDATES", ""), now)
+        self._hardening = pp.parse_hardening(s.get("HARDEN", ""))
         if self._sudo is None:
             # PRIV reports sudo_ok only when this run actually enabled sudo (non-root + it works)
             self._sudo = "sudo_ok" in s.get("PRIV", "").split()

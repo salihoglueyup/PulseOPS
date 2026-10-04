@@ -4,8 +4,8 @@ import re
 from typing import NamedTuple
 
 from models.ports import ListeningPort
-from models.security import (AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, LoginEvent,
-                             UpdateStatus)
+from models.security import (AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, HardeningAudit,
+                             HardeningCheck, LoginEvent, UpdateStatus)
 from models.system import DiskPartition, FirewallStatus, MemoryMetric
 from collectors.port_collector import classify_exposure, get_service_hint
 
@@ -555,6 +555,103 @@ def parse_updates(text: str, now: float) -> UpdateStatus:
         elif st.reboot_required is None:
             st.reboot_required = False
     return st
+
+
+# sysctl key -> (accepted values, severity, title)
+SYSCTL_CHECKS = {
+    "kernel/randomize_va_space": ({"2"}, "MEDIUM", "ASLR tam açık (randomize_va_space=2)"),
+    "fs/protected_symlinks": ({"1"}, "MEDIUM", "Sembolik bağ saldırısı koruması (protected_symlinks=1)"),
+    "fs/protected_hardlinks": ({"1"}, "MEDIUM", "Hard link saldırısı koruması (protected_hardlinks=1)"),
+    "net/ipv4/tcp_syncookies": ({"1"}, "MEDIUM", "SYN flood koruması (tcp_syncookies=1)"),
+    "net/ipv4/conf/all/accept_source_route": ({"0"}, "MEDIUM", "Kaynak yönlendirmeli paketler reddediliyor"),
+    "kernel/kptr_restrict": ({"1", "2"}, "LOW", "Çekirdek adresleri gizli (kptr_restrict>=1)"),
+    "kernel/dmesg_restrict": ({"1"}, "LOW", "dmesg yalnızca root'a açık (dmesg_restrict=1)"),
+    "kernel/yama/ptrace_scope": ({"1", "2", "3"}, "LOW", "ptrace kısıtlı (yama.ptrace_scope>=1)"),
+    "fs/suid_dumpable": ({"0"}, "LOW", "SUID süreçler core dump bırakmıyor (suid_dumpable=0)"),
+    "net/ipv4/conf/all/accept_redirects": ({"0"}, "LOW", "ICMP yönlendirmeleri kabul edilmiyor"),
+    "net/ipv4/conf/all/send_redirects": ({"0"}, "LOW", "ICMP yönlendirmesi gönderilmiyor"),
+    "net/ipv4/conf/all/rp_filter": ({"1", "2"}, "LOW", "Sahte kaynak IP filtresi (rp_filter)"),
+}
+# file -> (bits that must not be set, title)
+PERM_CHECKS = {
+    "/etc/shadow": (0o004, "/etc/shadow herkes tarafından okunamıyor", "/etc/shadow herkes tarafından okunabiliyor"),
+    "/etc/gshadow": (0o004, "/etc/gshadow herkes tarafından okunamıyor", "/etc/gshadow herkes tarafından okunabiliyor"),
+    "/etc/passwd": (0o002, "/etc/passwd herkes tarafından yazılamıyor", "/etc/passwd herkes tarafından yazılabiliyor"),
+    "/etc/group": (0o002, "/etc/group herkes tarafından yazılamıyor", "/etc/group herkes tarafından yazılabiliyor"),
+    "/etc/sudoers": (0o022, "/etc/sudoers başkaları tarafından yazılamıyor", "/etc/sudoers başkaları tarafından yazılabiliyor"),
+    "/etc/ssh/sshd_config": (0o022, "sshd_config başkaları tarafından yazılamıyor",
+                             "sshd_config başkaları tarafından yazılabiliyor"),
+}
+
+
+def parse_hardening(text: str) -> HardeningAudit:
+    blocks: dict[str, list[str]] = {}
+    current = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("#") and line[1:].replace("_", "").isupper():
+            current = line[1:]
+            blocks[current] = []
+        elif line and current is not None:
+            blocks[current].append(line)
+    audit = HardeningAudit(known="SYSCTL" in blocks)
+    if not audit.known:
+        return audit
+    add = audit.checks.append
+
+    sysctl = dict(line.split(" ", 1) for line in blocks.get("SYSCTL", []) if " " in line)
+    # The kernel applies max(all, <interface>) for rp_filter; distros usually set it via `default`
+    rp = [sysctl[k].strip() for k in ("net/ipv4/conf/all/rp_filter", "net/ipv4/conf/default/rp_filter") if k in sysctl]
+    if rp:
+        sysctl["net/ipv4/conf/all/rp_filter"] = max(rp)
+    for key, (ok, severity, title) in SYSCTL_CHECKS.items():
+        if key in sysctl:
+            add(HardeningCheck(id=f"sysctl:{key}", title=title, severity=severity,
+                               passed=sysctl[key].strip() in ok, detail=f"{key.replace('/', '.')} = {sysctl[key]}"))
+    if "net/ipv4/ip_forward" in sysctl:
+        audit.ip_forward = sysctl["net/ipv4/ip_forward"].strip() == "1"
+
+    mounts = {}
+    for line in blocks.get("MOUNTS", []):
+        mnt, _, opts = line.partition(" ")
+        mounts[mnt] = set(opts.split(","))
+    for mnt in ("/tmp", "/dev/shm"):
+        if mnt in mounts:
+            missing = [o for o in ("nosuid", "nodev") if o not in mounts[mnt]]
+            add(HardeningCheck(id=f"mount:{mnt}", title=f"{mnt} nosuid,nodev ile bağlı", severity="LOW",
+                               passed=not missing, detail="eksik: " + ",".join(missing) if missing else ""))
+
+    for line in blocks.get("PERMS", []):
+        parts = line.split(" ", 2)
+        if len(parts) != 3 or parts[2] not in PERM_CHECKS:
+            continue
+        try:
+            mode = int(parts[0], 8)
+        except ValueError:
+            continue
+        forbidden, title, problem = PERM_CHECKS[parts[2]]
+        add(HardeningCheck(id=f"perm:{parts[2]}", title=title, severity="HIGH", passed=not mode & forbidden,
+                           detail=f"izin {parts[0]}, sahibi {parts[1]}", problem=problem))
+
+    audit.suid_files = sorted(set(blocks.get("SUID", [])))
+    suspect = blocks.get("SUID_SUSPECT", [])
+    if suspect != ["UNKNOWN"]:
+        audit.suspicious_suid = sorted(set(suspect))
+        add(HardeningCheck(id="suid:suspicious", title="Geçici/kullanıcı dizinlerinde SUID/SGID dosya yok",
+                           severity="HIGH", passed=not audit.suspicious_suid,
+                           detail=", ".join(audit.suspicious_suid[:5]),
+                           problem=f"Şüpheli konumda SUID/SGID dosya: {', '.join(audit.suspicious_suid[:3])}"))
+    audit.world_writable = sorted(set(blocks.get("WORLD_WRITABLE", [])))
+    add(HardeningCheck(id="files:world-writable", title="/etc ve bin dizinlerinde herkesin yazabildiği dosya yok",
+                       severity="HIGH", passed=not audit.world_writable, detail=", ".join(audit.world_writable[:5]),
+                       problem=f"Herkesin yazabildiği sistem dosyası: {', '.join(audit.world_writable[:3])}"))
+    empty = blocks.get("EMPTY_PASSWORD", [])
+    if empty != ["UNKNOWN"]:
+        audit.empty_password_users = sorted(set(empty))
+        add(HardeningCheck(id="accounts:empty-password", title="Boş parolalı hesap yok", severity="HIGH",
+                           passed=not audit.empty_password_users, detail=", ".join(audit.empty_password_users),
+                           problem=f"Boş parolalı hesap: {', '.join(audit.empty_password_users)}"))
+    return audit
 
 
 def parse_access(text: str) -> AccessAudit:

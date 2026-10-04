@@ -50,6 +50,9 @@ def summarize_alerts(t: Telemetry, thresholds: Optional[AlertConfig] = None) -> 
         alerts.append(f"{updates.security} güvenlik güncellemesi bekliyor")
     if updates.reboot_required:
         alerts.append("Yeniden başlatma gerekli (yamalar etkin değil)")
+    for check in t.security.hardening.failed:
+        if check.severity == "HIGH":
+            alerts.append(check.problem or f"Sertleştirme başarısız: {check.title}")
     if t.storage.is_cache_bloated:
         alerts.append("BuildKit önbelleği >10GB")
     return alerts

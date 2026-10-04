@@ -233,7 +233,8 @@ def render_status(t: Telemetry, console: Console, config: Optional[Config] = Non
             if sec.auth.known else "okunamadı")
     console.print(f"SSH girişleri: {auth}  ·  fail2ban: {f2b}", markup=False)
     reboot = {True: "  ·  YENİDEN BAŞLATMA GEREKLİ", False: "", None: ""}[sec.updates.reboot_required]
-    console.print(f"Güncellemeler: {sec.updates.summary}{reboot}", markup=False)
+    console.print(f"Güncellemeler: {sec.updates.summary}{reboot}  ·  Sertleştirme: {sec.hardening.summary}",
+                  markup=False)
     console.print()
 
     limitations = t.privileges.limitations

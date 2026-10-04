@@ -185,6 +185,30 @@ SLOW_SECTIONS = [
         " elif command -v needs-restarting >/dev/null; then"
         " priv needs-restarting -r >/dev/null; case $? in 0) echo 'REBOOT no';; 1) echo 'REBOOT yes';; esac; fi",
     ),
+    (
+        "HARDEN",
+        # CIS-style host hardening, all read-only: kernel sysctls (shell builtins), mount options,
+        # permissions of credential files, SUID/SGID binaries (system dirs + places where they
+        # are a backdoor sign), world-writable system files, accounts with an empty password.
+        "echo '#SYSCTL'; for k in kernel/randomize_va_space kernel/kptr_restrict kernel/dmesg_restrict"
+        " kernel/yama/ptrace_scope fs/protected_symlinks fs/protected_hardlinks fs/suid_dumpable"
+        " net/ipv4/tcp_syncookies net/ipv4/conf/all/accept_redirects net/ipv4/conf/all/send_redirects"
+        " net/ipv4/conf/all/accept_source_route net/ipv4/conf/all/rp_filter net/ipv4/conf/default/rp_filter"
+        " net/ipv4/ip_forward; do"
+        " v=; [ -r /proc/sys/$k ] && read -r v < /proc/sys/$k; [ -n \"$v\" ] && echo \"$k $v\"; done;"
+        " echo '#MOUNTS'; while read -r dev mnt fs opts rest; do case $mnt in /tmp|/var/tmp|/dev/shm) echo \"$mnt $opts\";; esac;"
+        " done < /proc/mounts;"
+        " echo '#PERMS'; stat -c '%a %U %n' /etc/passwd /etc/shadow /etc/gshadow /etc/group /etc/sudoers /etc/ssh/sshd_config;"
+        " echo '#SUID'; find /usr/bin /usr/sbin /bin /sbin /usr/local/bin /usr/local/sbin -maxdepth 1 -type f -perm /6000"
+        " | head -n 200;"
+        " echo '#SUID_SUSPECT'; if [ \"$(id -u)\" = 0 ] || [ -n \"$S\" ]; then"
+        " priv find /tmp /var/tmp /dev/shm /home /root /srv /opt -xdev -maxdepth 4 -type f -perm /6000 | head -n 50;"
+        " else echo UNKNOWN; fi;"
+        " echo '#WORLD_WRITABLE'; find /etc /usr/bin /usr/sbin /usr/local/bin /usr/local/sbin -xdev -type f -perm -0002"
+        " | head -n 50;"
+        " echo '#EMPTY_PASSWORD'; if [ -r /etc/shadow ] || [ -n \"$S\" ]; then"
+        " priv awk -F: '$2 == \"\" { print $1 }' /etc/shadow; else echo UNKNOWN; fi",
+    ),
     ("SERVICES", "systemctl list-units --type=service --all --no-pager"),
     ("UNIT_FILES", "systemctl list-unit-files --type=service --no-pager"),
     (
@@ -252,7 +276,7 @@ SECTION_PREFIX = "===PULSEOPS"
 
 
 # Slow sections whose content practically never changes; the collector refreshes them far less often
-RARE_SECTIONS = {"UNIT_FILES", "SYSCONF", "UPDATES"}
+RARE_SECTIONS = {"UNIT_FILES", "SYSCONF", "UPDATES", "HARDEN"}
 
 
 def build_script(

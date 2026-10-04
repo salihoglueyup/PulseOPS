@@ -114,6 +114,39 @@ class UpdateStatus(BaseModel):
         return text
 
 
+class HardeningCheck(BaseModel):
+    id: str
+    title: str
+    severity: str                  # HIGH, MEDIUM, LOW
+    passed: bool
+    detail: str = ""
+    problem: str = ""              # alert text when failed (HIGH checks)
+
+
+class HardeningAudit(BaseModel):
+    """CIS-style host hardening. Checks whose data could not be read are simply absent."""
+
+    known: bool = False
+    checks: list[HardeningCheck] = Field(default_factory=list)
+    suid_files: list[str] = Field(default_factory=list)          # SUID/SGID in system binary dirs
+    suspicious_suid: Optional[list[str]] = None                  # SUID/SGID in /tmp, /home...; None: unknown
+    world_writable: list[str] = Field(default_factory=list)      # world-writable files in /etc, bin dirs
+    empty_password_users: Optional[list[str]] = None             # None: /etc/shadow not readable
+    ip_forward: Optional[bool] = None
+
+    @property
+    def failed(self) -> list[HardeningCheck]:
+        return [c for c in self.checks if not c.passed]
+
+    @property
+    def summary(self) -> str:
+        if not self.known:
+            return "kontrol ediliyor"
+        high = sum(1 for c in self.failed if c.severity == "HIGH")
+        text = f"{len(self.checks) - len(self.failed)}/{len(self.checks)} kontrol geçti"
+        return text + (f", {high} kritik" if high else "")
+
+
 class SecurityOverview(BaseModel):
     ssh: SSHSecurityAudit = Field(default_factory=SSHSecurityAudit)
     firewall_name: str = "UFW"
@@ -128,3 +161,4 @@ class SecurityOverview(BaseModel):
     auth: AuthActivity = Field(default_factory=AuthActivity)
     access: AccessAudit = Field(default_factory=AccessAudit)
     updates: UpdateStatus = Field(default_factory=UpdateStatus)
+    hardening: HardeningAudit = Field(default_factory=HardeningAudit)

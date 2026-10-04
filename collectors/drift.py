@@ -56,6 +56,14 @@ def fingerprint(t: Telemetry) -> Fingerprint:
     fp["admin_users"] = sorted(access.admin_users) if access.login_users else None
     fp["nopasswd_rules"] = sorted(access.nopasswd_rules) if access.sudoers_known else None
     fp["sudo_rule_users"] = sorted(access.sudo_rule_users) if access.sudoers_known else None
+    hard = sec.hardening
+    fp["suid_files"] = sorted(hard.suid_files) if hard.known else None
+    fp["suspicious_suid"] = sorted(hard.suspicious_suid) if hard.suspicious_suid is not None else None
+    fp["empty_password_users"] = (sorted(hard.empty_password_users)
+                                  if hard.empty_password_users is not None else None)
+    fp["world_writable"] = sorted(hard.world_writable) if hard.known else None
+    fp["permission_problems"] = (sorted(c.problem for c in hard.failed if c.id.startswith("perm:"))
+                                 if hard.known else None)
     fp["authorized_keys"] = (
         sorted([f"{user}={count}" for user, count in access.authorized_keys.items()]
                + [f"{user}=?" for user in access.authorized_keys_unknown])
@@ -130,6 +138,27 @@ def diff(old: Fingerprint, new: Fingerprint) -> list[Change]:
             add("sudo", HIGH, f"sudoers ile yetki verildi: {subject}")
         for subject in removed:
             add("sudo", INFO, f"sudoers yetkisi kaldırıldı: {subject}")
+    if both("suid_files"):
+        added, removed = _added_removed(old["suid_files"], new["suid_files"])
+        for path in added:
+            add("hardening", HIGH, f"Yeni SUID/SGID dosya: {path}")
+        for path in removed:
+            add("hardening", INFO, f"SUID/SGID dosya kaldırıldı: {path}")
+    if both("suspicious_suid"):
+        for path in _added_removed(old["suspicious_suid"], new["suspicious_suid"])[0]:
+            add("hardening", HIGH, f"Şüpheli konumda SUID/SGID dosya: {path}")
+    if both("empty_password_users"):
+        for user in _added_removed(old["empty_password_users"], new["empty_password_users"])[0]:
+            add("account", HIGH, f"Parolası boşaltılan hesap: {user}")
+    if both("world_writable"):
+        for path in _added_removed(old["world_writable"], new["world_writable"])[0]:
+            add("hardening", HIGH, f"Herkesin yazabildiği sistem dosyası: {path}")
+    if both("permission_problems"):
+        added, removed = _added_removed(old["permission_problems"], new["permission_problems"])
+        for problem in added:
+            add("hardening", HIGH, f"Dosya izni bozuldu: {problem}")
+        for problem in removed:
+            add("hardening", INFO, f"Dosya izni düzeltildi: {problem}")
     if both("authorized_keys"):
         before = dict(item.split("=", 1) for item in old["authorized_keys"])
         after = dict(item.split("=", 1) for item in new["authorized_keys"])
