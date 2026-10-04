@@ -408,12 +408,15 @@ def test_rare_sections_are_skipped_while_cached():
 # Commands/arguments that would change the host. The probe must never contain any of them.
 WRITE_PATTERNS = [
     r"\brm\b", r"\bmv\b", r"\bcp\b", r"\btee\b", r"\bdd\b", r"\btruncate\b", r"\bchmod\b", r"\bchown\b",
-    r"\bmkdir\b", r"\btouch\b", r"\bln\b", r"\bkill\b", r"\bpkill\b", r"\bkillall\b", r"(?<!\|)\breboot\b(?!\|)", r"(?<!\|)\bshutdown\b(?!\|)",
+    r"\bmkdir\b", r"\btouch\b", r"\bln\b", r"\bkill\b", r"\bpkill\b", r"\bkillall\b", r"(?<![|/-])\breboot\b(?![|-])", r"(?<!\|)\bshutdown\b(?!\|)",
     r"sed\s+-i", r"\bsystemctl\s+(start|stop|restart|reload|enable|disable|mask|kill)\b",
     r"\bdocker\s+(rm|rmi|stop|start|restart|kill|run|exec|prune|system\s+prune|builder\s+prune|volume\s+rm)\b",
     r"\bufw\s+(enable|disable|allow|deny|reject|limit|delete|reset|insert)\b",
     r"\biptables\s+-[ADIRFNXZP]\b", r"\bnft\s+(add|delete|flush|insert|replace|create)\b",
     r"\bfail2ban-client\s+(set|unban|ban|stop|start|reload|restart)\b", r"\bcrontab\s+-[re]\b",
+    r"\bapt(-get)?\s+(install|remove|purge|upgrade|dist-upgrade|full-upgrade|update|autoremove|clean)\b",
+    r"\b(dnf|yum)\s+(install|remove|erase|upgrade|update|makecache|clean|distro-sync)\b",
+    r"\bapk\s+(add|del|upgrade|update|fix|cache)\b", r"\bneeds-restarting\s+-s\b",
     r"\bjournalctl\s+--(vacuum|rotate|flush)", r"\bfirewall-cmd\s+--(add|remove|reload|set)", r"\bnginx\s+-s\b",
 ]
 
@@ -423,6 +426,12 @@ def test_probe_is_read_only():
     body = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
     for pattern in WRITE_PATTERNS:
         assert not re.search(pattern, body), f"probe contains a modifying command: {pattern}"
+    # Package managers: a modifying verb anywhere in the command needs simulate/cache-only flags
+    for cmd in re.findall(r"\bapt(?:-get)?\s[^;|&]*", body):
+        if re.search(r"\b(install|remove|purge|upgrade|dist-upgrade|full-upgrade|update|autoremove)\b", cmd):
+            assert re.search(r"\s-s\b", cmd), f"apt runs for real: {cmd}"
+    for cmd in re.findall(r"\$pm\s[^;|&]*|(?<!-v )\b(?:dnf|yum)\s[^;|&]*", body):
+        assert re.search(r"\s-C\b", cmd), f"dnf may refresh metadata: {cmd}"
     # Shell output redirections may only discard (>/dev/null, 2>/dev/null, >&2-style dups)
     shell_only = re.sub(r"'[^']*'", "''", body)
     for target in re.findall(r"(?<![<>&|])(?:\d?>>?)\s*([^\s;|&)]+)", shell_only):

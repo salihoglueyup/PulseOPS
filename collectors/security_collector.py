@@ -5,7 +5,7 @@ from pathlib import Path
 from models.system import FirewallStatus
 from typing import Optional
 
-from models.security import AccessAudit, AuthActivity, Fail2banStatus, SecurityOverview, SSHSecurityAudit
+from models.security import AccessAudit, AuthActivity, Fail2banStatus, SecurityOverview, SSHSecurityAudit, UpdateStatus
 from models.ports import ListeningPort, PortExposure
 
 class SecurityCollector:
@@ -88,6 +88,7 @@ class SecurityCollector:
         auth: Optional[AuthActivity] = None,
         access: Optional[AccessAudit] = None,
         failed_login_threshold: int = 100,
+        updates: Optional[UpdateStatus] = None,
     ) -> SecurityOverview:
         """Combines SSH audit, firewall state, listening ports and access data into the security overview."""
         fail2ban = fail2ban or Fail2banStatus()
@@ -135,6 +136,8 @@ class SecurityCollector:
             recs.append(f"[GUVENLI] Dahili Veritabanlari: Port {safe_dbs} yalnizca 127.0.0.1 (Localhost) uzerinde guvenle calisiyor.")
 
         recs.extend(soc_recommendations(ssh_audit, fail2ban, auth, access, failed_login_threshold))
+        updates = updates or UpdateStatus()
+        recs.extend(update_recommendations(updates))
 
         if not recs:
             recs.append("[GUVENLI] Sunucu temel guvenlik kurallarina uygun ve sertlestirilmis durumda.")
@@ -157,7 +160,25 @@ class SecurityCollector:
             fail2ban=fail2ban,
             auth=auth,
             access=access,
+            updates=updates,
         )
+
+
+def update_recommendations(updates: UpdateStatus) -> list[str]:
+    recs = []
+    if updates.known and updates.security:
+        names = ", ".join(updates.security_packages[:5])
+        recs.append(f"[DIKKAT] {updates.security} guvenlik guncellemesi bekliyor ({names}). "
+                    "Uygulayin: apt upgrade / dnf upgrade --security")
+    elif updates.known and updates.total:
+        recs.append(f"[BILGI] {updates.total} paket guncellemesi bekliyor.")
+    if updates.metadata_stale:
+        recs.append(f"[BILGI] Paket listeleri {updates.metadata_age_days:.0f} gundur yenilenmemis; "
+                    "guncelleme sayilari eski olabilir (apt update / unattended-upgrades).")
+    if updates.reboot_required:
+        recs.append(f"[UYARI] Yeniden baslatma gerekiyor: {updates.reboot_reason}. "
+                    "Yamalar ancak yeniden baslatmadan sonra etkin olur.")
+    return recs
 
 
 def soc_recommendations(

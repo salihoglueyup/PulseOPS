@@ -178,3 +178,46 @@ def test_parse_fail2ban_permission_vs_stopped():
     assert pp.parse_fail2ban("INSTALLED\nRUNNING\nUNKNOWN\n").known is False      # running, socket not readable
     stopped = pp.parse_fail2ban("INSTALLED\nSTOPPED\nUNKNOWN\n")
     assert stopped.known and stopped.running is False
+
+
+def test_parse_updates_apt_with_security_and_reboot():
+    now = 1_800_000_000
+    u = pp.parse_updates(
+        "MANAGER apt\nMETA 1799913600\nSECPKG openssl\nSECPKG libc6\nTOTAL 12\nSECURITY 2\n"
+        "KERNEL 6.8.0-40-generic\nKERNELS 6.8.0-40-generic 6.8.0-45-generic\n"
+        "REBOOT yes\nREBOOT_PKG linux-image-6.8.0-45-generic\nREBOOT_PKG libc6\n", now)
+    assert (u.manager, u.known, u.total, u.security) == ("apt", True, 12, 2)
+    assert u.security_packages == ["openssl", "libc6"]
+    assert round(u.metadata_age_days) == 1 and not u.metadata_stale
+    assert u.reboot_required
+    # A newer installed kernel is the more specific reason
+    assert u.reboot_reason == "yeni çekirdek kurulu: 6.8.0-45-generic (çalışan 6.8.0-40-generic)"
+
+
+def test_parse_updates_unknowns_are_not_zero():
+    blind = pp.parse_updates("MANAGER dnf\nTOTAL UNKNOWN\nKERNEL 5.14.0-427.el9.x86_64\nKERNELS\n", 0)
+    assert not blind.known and blind.security is None and blind.reboot_required is None
+    assert blind.summary.startswith("okunamadı")
+    apk = pp.parse_updates("MANAGER apk\nMETA 0\nTOTAL 3\nSECURITY UNKNOWN\n", 30 * 86400)
+    assert apk.known and apk.security is None and apk.metadata_stale
+    assert apk.summary == "3 bekliyor (güvenlik bilgisi yok), listeler 30 gün eski"
+    # RHEL kernel versions order numerically, running == newest -> no reboot
+    rhel = pp.parse_updates("MANAGER dnf\nTOTAL 0\nSECURITY 0\nKERNEL 5.14.0-427.el9.x86_64\n"
+                            "KERNELS 5.14.0-70.el9.x86_64 5.14.0-427.el9.x86_64\n", 0)
+    assert rhel.reboot_required is False
+    assert pp.parse_updates("", 0).summary == "kontrol ediliyor"
+
+
+def test_updates_raise_alerts_and_lower_the_score():
+    from collectors.audit_exporter import calculate_audit_score
+    from collectors.base import DemoCollector
+    from collectors.telemetry import collect_telemetry, summarize_alerts
+    from models.security import UpdateStatus
+
+    t = collect_telemetry(DemoCollector())
+    base, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, t.security, t.storage)
+    t.security.updates = UpdateStatus(manager="apt", known=True, total=9, security=4, reboot_required=True,
+                                      reboot_reason="x")
+    alerts = summarize_alerts(t)
+    assert "4 güvenlik güncellemesi bekliyor" in alerts and any("Yeniden başlatma" in a for a in alerts)
+    assert calculate_audit_score(t.snapshot, t.ports, t.routes, t.security, t.storage)[0] == base - 15

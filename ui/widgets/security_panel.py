@@ -111,6 +111,7 @@ class SecurityPanel(Widget):
         cards.add_column("FAIL2BAN", style="bold #f0f6fc", ratio=1)
         cards.add_column(Text(f"SSH GİRİŞLERİ ({auth.window or '-'})".upper()), style="bold #f0f6fc", ratio=1)
         cards.add_column("YETKİLİ HESAPLAR", style="bold #f0f6fc", ratio=1)
+        cards.add_column("GÜNCELLEMELER", style="bold #f0f6fc", ratio=1)
 
         f2b_text = Text()
         if not f2b.installed:
@@ -151,7 +152,23 @@ class SecurityPanel(Widget):
             acc_text.append(f"NOPASSWD kuralı: {len(access.nopasswd_rules)}", style=WARN)
         else:
             acc_text.append("NOPASSWD kuralı yok ✓", style=GOOD)
-        cards.add_row(f2b_text, auth_text, acc_text)
+        upd = sec.updates
+        upd_text = Text()
+        if not upd.manager or not upd.known or upd.manager == "none":
+            upd_text.append(upd.summary.capitalize(), style=DIM)
+        else:
+            upd_text.append(f"Bekleyen: {upd.total}\n", style="#f0f6fc")
+            if upd.security is None:
+                upd_text.append("Güvenlik: bilinmiyor\n", style=DIM)
+            elif upd.security:
+                upd_text.append(f"Güvenlik: {upd.security} ⚠\n", style=BAD)
+            else:
+                upd_text.append("Güvenlik yaması yok ✓\n", style=GOOD)
+            if upd.metadata_stale:
+                upd_text.append(f"Listeler {upd.metadata_age_days:.0f} gün eski\n", style=WARN)
+        if upd.reboot_required:
+            upd_text.append("\nYENİDEN BAŞLATMA GEREKLİ", style=BAD)
+        cards.add_row(f2b_text, auth_text, acc_text, upd_text)
 
         details = Table(expand=True, box=None, padding=(0, 2))
         details.add_column("EN ÇOK DENEYEN KAYNAKLAR", style="#f0f6fc", ratio=1)

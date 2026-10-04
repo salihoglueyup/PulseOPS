@@ -57,6 +57,16 @@ def _soc_section(security: SecurityOverview) -> list[str]:
     if access.authorized_keys:
         keys = ", ".join(f"`{_md(u)}`: {n}" for u, n in sorted(access.authorized_keys.items()))
         lines.append(f"* **authorized_keys:** {keys}")
+
+    upd = security.updates
+    if upd.manager:
+        lines.append("")
+        lines.append("### Paket güncellemeleri")
+        lines.append(f"* **Durum ({_md(upd.manager)}):** {_md(upd.summary)}")
+        if upd.security_packages:
+            lines.append(f"* **Güvenlik yaması bekleyen paketler:** {', '.join(f'`{_md(p)}`' for p in upd.security_packages)}")
+        if upd.reboot_required:
+            lines.append(f"* **Yeniden başlatma gerekli:** {_md(upd.reboot_reason)}")
     return lines
 
 
@@ -90,6 +100,12 @@ def calculate_audit_score(
     # SSH brute force without fail2ban protection (-10)
     if security and security.auth.known and security.auth.failed_total >= 100 and not security.fail2ban.protecting_ssh:
         score -= 10
+
+    # Unapplied security updates (-10) and patches waiting for a reboot (-5)
+    if security and security.updates.known and security.updates.security:
+        score -= 10
+    if security and security.updates.reboot_required:
+        score -= 5
 
     # 502 / 504 Bad Gateway routes (-10 each)
     bad_routes = [r for r in routes if r.http_status in (502, 504)]

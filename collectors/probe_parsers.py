@@ -4,7 +4,8 @@ import re
 from typing import NamedTuple
 
 from models.ports import ListeningPort
-from models.security import AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, LoginEvent
+from models.security import (AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, LoginEvent,
+                             UpdateStatus)
 from models.system import DiskPartition, FirewallStatus, MemoryMetric
 from collectors.port_collector import classify_exposure, get_service_hint
 
@@ -504,6 +505,56 @@ def sudo_rule_subjects(lines: list[str]) -> list[str]:
             if subject and subject not in ("root", "ALL") and subject not in _ADMIN_GROUPS and subject not in subjects:
                 subjects.append(subject)
     return subjects
+
+
+def _kernel_key(release: str) -> tuple:
+    """'5.15.0-105-generic' -> (5, 15, 0, 105): numeric parts only, for ordering kernels."""
+    return tuple(int(n) for n in re.findall(r"\d+", release.split("-generic")[0])[:6])
+
+
+def parse_updates(text: str, now: float) -> UpdateStatus:
+    st = UpdateStatus()
+    kernels: list[str] = []
+    reboot_pkgs: list[str] = []
+    for line in text.splitlines():
+        key, _, rest = line.strip().partition(" ")
+        rest = rest.strip()
+        if key == "MANAGER":
+            st.manager = rest
+        elif key == "TOTAL" and rest.isdigit():
+            st.total, st.known = int(rest), True
+        elif key == "SECURITY":
+            st.security = int(rest) if rest.isdigit() else None
+        elif key == "SECPKG" and rest and len(st.security_packages) < 30:
+            st.security_packages.append(rest)
+        elif key == "META":
+            try:
+                st.metadata_age_days = max(0.0, (now - float(rest)) / 86400)
+            except ValueError:
+                pass
+        elif key == "KERNEL":
+            st.running_kernel = rest
+        elif key == "KERNELS":
+            kernels = rest.split()
+        elif key == "REBOOT" and rest in ("yes", "no"):
+            st.reboot_required = rest == "yes"
+        elif key == "REBOOT_PKG" and rest and rest not in reboot_pkgs:
+            reboot_pkgs.append(rest)
+    if st.reboot_required:
+        st.reboot_reason = ("yeniden başlatma isteyen paketler: " + ", ".join(reboot_pkgs[:5])
+                            if reboot_pkgs else "paket güncellemesi yeniden başlatma istiyor")
+    if not st.known:
+        st.security = None
+    # A newer kernel installed than the one running also means a reboot is pending
+    running = st.running_kernel
+    if running and running in kernels:
+        newest = max(kernels, key=_kernel_key)
+        if _kernel_key(newest) > _kernel_key(running):
+            st.reboot_required = True
+            st.reboot_reason = f"yeni çekirdek kurulu: {newest} (çalışan {running})"
+        elif st.reboot_required is None:
+            st.reboot_required = False
+    return st
 
 
 def parse_access(text: str) -> AccessAudit:

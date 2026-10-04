@@ -22,7 +22,7 @@ from collectors import probe_parsers as pp
 from models.backup import BackupData
 from models.docker import ContainerSummary
 from models.privileges import PrivilegeInfo
-from models.security import AccessAudit, AuthActivity, Fail2banStatus, SSHSecurityAudit
+from models.security import AccessAudit, AuthActivity, Fail2banStatus, SSHSecurityAudit, UpdateStatus
 from models.services import ServiceState, ServiceUnit
 from models.storage import StorageOverview
 from models.system import CpuMetric, DiskIoRate, FirewallStatus, NetworkRate, ProcessInfo, SystemSnapshot
@@ -43,6 +43,9 @@ class ProbeCollector(BaseCollector):
         self._sudo: Optional[bool] = None if use_sudo else False
         self.fast_timeout = fast_timeout
         self.slow_timeout = slow_timeout
+        # Interactive views set this: the package manager check (seconds of CPU with apt) is then
+        # left out of the very first poll so the screen fills at once; it arrives a slow tick later
+        self.defer_updates = False
 
         self._ports_parser = PortCollector()
         self._nginx = NginxParser()
@@ -84,6 +87,7 @@ class ProbeCollector(BaseCollector):
         self._fail2ban = Fail2banStatus()
         self._auth = AuthActivity()
         self._access = AccessAudit()
+        self._updates = UpdateStatus()
         self._logs: list[str] = []
 
     # --- public API -------------------------------------------------------------------------
@@ -93,6 +97,8 @@ class ProbeCollector(BaseCollector):
         need_baseline = self._prev_uptime is None
         rare_fresh = self._rare_sections and time.time() - self._rare_collected_at < RARE_REFRESH_SECONDS
         skip = frozenset(RARE_SECTIONS) if rare_fresh else frozenset()
+        if self.defer_updates and need_slow and not self._slow_sections:
+            skip |= {"UPDATES"}
         script, nonce = build_script(
             fast=True, slow=need_slow, logs=include_logs, baseline=need_baseline, sudo=self._sudo, skip=skip,
         )
@@ -137,7 +143,7 @@ class ProbeCollector(BaseCollector):
             databases=self._db.discover_databases(ports, self._containers),
             security=self._security.build_overview(
                 self._ssh_audit, self._firewall, ports, self._fail2ban, self._auth, self._access,
-                failed_login_threshold=self.failed_login_threshold,
+                failed_login_threshold=self.failed_login_threshold, updates=self._updates,
             ),
             storage=storage,
             privileges=self._privileges,
@@ -316,6 +322,7 @@ class ProbeCollector(BaseCollector):
         self._fail2ban = pp.parse_fail2ban(s.get("FAIL2BAN", ""))
         self._auth = pp.parse_auth(s.get("AUTH", ""))
         self._access = pp.parse_access(s.get("ACCESS", ""))
+        self._updates = pp.parse_updates(s.get("UPDATES", ""), now)
         if self._sudo is None:
             # PRIV reports sudo_ok only when this run actually enabled sudo (non-root + it works)
             self._sudo = "sudo_ok" in s.get("PRIV", "").split()

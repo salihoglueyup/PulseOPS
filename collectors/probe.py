@@ -156,6 +156,35 @@ SLOW_SECTIONS = [
         " /^[[:space:]]*}/{i=0} i && /(accept|drop|reject)/{c++}"
         " END{if (u) print \"UNKNOWN\"; else print \"rules=\" c+0 \" policy_drop=\" d+0}'; fi",
     ),
+    (
+        "UPDATES",
+        # Pending updates from the package manager's existing metadata, never refreshed here
+        # (no `apt update`, `dnf -C` = cache only): read-only and no network. The metadata age is
+        # reported so stale counts can be flagged. Then: is a reboot needed for a new kernel/libs?
+        "if command -v apt-get >/dev/null; then echo 'MANAGER apt';"
+        " lists=$(ls -t /var/lib/apt/lists/*Release 2>/dev/null | head -n 1);"
+        " if [ -n \"$lists\" ]; then echo \"META $(date -r \"$lists\" +%s)\";"
+        " apt-get -s -q -o Debug::NoLocking=1 dist-upgrade | awk '/^Inst /{t++; if ($0 ~ /-security/) { s++;"
+        " if (s <= 30) print \"SECPKG\", $2 } } END { print \"TOTAL\", t+0; print \"SECURITY\", s+0 }';"
+        " else echo 'TOTAL UNKNOWN'; fi;"
+        " elif command -v dnf >/dev/null || command -v yum >/dev/null; then echo 'MANAGER dnf';"
+        " pm=$(command -v dnf || command -v yum); out=$(priv $pm -C -q check-update); rc=$?;"
+        " if [ $rc = 0 ] || [ $rc = 100 ]; then printf '%s\\n' \"$out\" | awk 'NF==3 && $1 ~ /\\./ {t++} END {print \"TOTAL\", t+0}';"
+        " priv $pm -C -q updateinfo list --security --available | awk 'NF>=3 && !seen[$3]++ { s++; if (s <= 30) print \"SECPKG\", $3 }"
+        " END { print \"SECURITY\", s+0 }';"
+        " else echo 'TOTAL UNKNOWN'; fi;"
+        " elif command -v apk >/dev/null; then echo 'MANAGER apk';"
+        " idx=$(ls -t /var/cache/apk/APKINDEX.*.tar.gz 2>/dev/null | head -n 1);"
+        " if [ -n \"$idx\" ]; then echo \"META $(date -r \"$idx\" +%s)\";"
+        " apk version -l '<' | awk 'NR>1 {t++} END {print \"TOTAL\", t+0}'; else echo 'TOTAL UNKNOWN'; fi;"
+        " echo 'SECURITY UNKNOWN';"
+        " else echo 'MANAGER none'; fi;"
+        " echo \"KERNEL $(uname -r)\"; echo \"KERNELS $(ls /lib/modules | tr '\\n' ' ')\";"
+        " if [ -f /var/run/reboot-required ]; then echo 'REBOOT yes';"
+        " [ -r /var/run/reboot-required.pkgs ] && sed 's/^/REBOOT_PKG /' /var/run/reboot-required.pkgs | head -n 10;"
+        " elif command -v needs-restarting >/dev/null; then"
+        " priv needs-restarting -r >/dev/null; case $? in 0) echo 'REBOOT no';; 1) echo 'REBOOT yes';; esac; fi",
+    ),
     ("SERVICES", "systemctl list-units --type=service --all --no-pager"),
     ("UNIT_FILES", "systemctl list-unit-files --type=service --no-pager"),
     (
@@ -223,7 +252,7 @@ SECTION_PREFIX = "===PULSEOPS"
 
 
 # Slow sections whose content practically never changes; the collector refreshes them far less often
-RARE_SECTIONS = {"UNIT_FILES", "SYSCONF"}
+RARE_SECTIONS = {"UNIT_FILES", "SYSCONF", "UPDATES"}
 
 
 def build_script(

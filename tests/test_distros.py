@@ -98,6 +98,13 @@ def test_probe_on_distro(container, user):
     # Unreadable / absent data must not turn into confident claims
     assert t.security.auth.failed_total == 0
     assert first.machine_id == t.machine_id
+    # Package manager detected; a bare image has no package index, which must read as unknown, not "0"
+    family = {"alpine": "apk", "ubuntu": "apt", "debian": "apt", "almalinux": "dnf"}[image.split(":")[0]]
+    assert first.security.updates.manager == family, (image, first.security.updates)
+    if not PROVISION:
+        assert not first.security.updates.known, (image, first.security.updates)
+    elif family == "apt" or (family == "dnf" and user != "nobody"):
+        assert first.security.updates.known, (image, user, first.security.updates)
 
     if not PROVISION:
         return

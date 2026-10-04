@@ -118,6 +118,8 @@ class FleetApp(App):
             log.warning("%s bağlanamadı: %s", entry.target, e)
             self.call_from_thread(self._set_error, entry, str(e))
             return
+        if hasattr(collector, "defer_updates"):
+            collector.defer_updates = True
         entry.collector = collector
         self._poll_in_thread(entry, include_slow=True)
 

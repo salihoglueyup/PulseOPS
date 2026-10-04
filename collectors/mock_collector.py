@@ -394,7 +394,7 @@ class MockCollector:
     def get_security(self):
         from models.security import (
             AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, LoginEvent,
-            SecurityOverview, SSHSecurityAudit,
+            SecurityOverview, SSHSecurityAudit, UpdateStatus,
         )
         return SecurityOverview(
             fail2ban=Fail2banStatus(installed=True, running=True, jails=[
@@ -416,6 +416,8 @@ class MockCollector:
             access=AccessAudit(uid0_users=["root"], admin_users=["deploy"], login_users=["root", "deploy"],
                                sudoers_known=True, nopasswd_rules=[], keys_known=True,
                                authorized_keys={"deploy": 2, "root": 0}),
+            updates=UpdateStatus(manager="apt", known=True, total=7, security=0, metadata_age_days=0.4,
+                                 reboot_required=False, running_kernel="6.8.0-40-generic"),
             ssh=SSHSecurityAudit(port=22, permit_root_login="no", password_authentication="no", pubkey_authentication="yes"),
             firewall_name="UFW",
             firewall_active=True,

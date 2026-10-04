@@ -16,7 +16,8 @@ pulseops probe --sudo off      # sudo hiç kullanılmadığında
 | Katman | Sıklık | Okunanlar |
 | :--- | :--- | :--- |
 | FAST | 2 sn | `/proc/{uptime,loadavg,stat,meminfo,diskstats,net/dev}`, `ss -lntu` (yoksa `/proc/net/*`), `/proc/*/stat` |
-| SLOW | 30 sn | hostname/os-release, `df`, `ss -lntup`, `ps`, `nginx -T`, `systemctl list-timers/list-units`, `crontab -l`, yedek dosyası araması (`find`, en fazla 4 seviye), `docker ps` / `docker system df`, `du` (öncelik düşük, 10 sn sınırlı), güvenlik duvarı (`ufw status`, `firewall-cmd --state`, `iptables -S INPUT`, `nft list ruleset`), `sshd -T` veya `sshd_config`, `fail2ban-client status`, sshd kimlik doğrulama kayıtları (journald son 24 saat veya `auth.log`/`secure` son 20.000 satır), `/etc/passwd`, `/etc/group`, sudoers'taki `NOPASSWD` satırları, `authorized_keys` satır sayıları |
+| SLOW | 30 sn | hostname/os-release, `df`, `ss -lntup`, `ps`, `nginx -T`, `systemctl list-timers/list-units`, `crontab -l`, yedek dosyası araması (`find`, en fazla 4 seviye), `docker ps` / `docker system df`, `du` (öncelik düşük, 10 sn sınırlı), güvenlik duvarı (`ufw status`, `firewall-cmd --state`, `iptables -S INPUT`, `nft list ruleset`), `sshd -T` veya `sshd_config`, `fail2ban-client status`, sshd kimlik doğrulama kayıtları (journald son 24 saat veya `auth.log`/`secure` son 20.000 satır), `/etc/passwd`, `/etc/group`, sudoers (yorum olmayan satırlar), `authorized_keys` satır sayıları |
+| SLOW, 10 dk'da bir | 10 dk | `systemctl list-unit-files`, `getconf`; bekleyen güncellemeler mevcut paket önbelleğinden: `apt-get -s dist-upgrade` (yalnızca simülasyon), `dnf -C check-update` / `dnf -C updateinfo --security` (yalnızca önbellek, ağ yok), `apk version -l '<'`; `/var/run/reboot-required`, `needs-restarting -r`, `uname -r`, `/lib/modules` |
 | LOGS | Loglar sekmesi açıkken | nginx access log veya journald son 40 satır |
 
 ### Salt-okunur garantisi
@@ -25,12 +26,16 @@ pulseops probe --sudo off      # sudo hiç kullanılmadığında
 başarısız olur: dosya yazan yönlendirmeler (`/dev/null` dışında), `rm`/`mv`/`cp`/`tee`/`chmod`/`sed -i`…,
 `systemctl start|stop|restart…`, `docker rm|run|exec|prune…`, `ufw allow|deny|enable…`,
 `iptables -A|-D|-I…`, `nft add|delete|flush…`, `fail2ban-client set|unban…`, `crontab -r|-e`, `nginx -s`,
+`apt install|upgrade|update…` (ve `-s` olmadan değiştiren her apt çağrısı), `-C` olmadan `dnf`/`yum`,
+`apk add|upgrade|update…`, `reboot`/`shutdown`,
 dosyaya yazan veya komut çalıştıran awk programları. Bu test, tehlikeli komut enjekte edilerek
 doğrulanmıştır (mutasyon testi).
 
 İçerik olarak okunmayan, yalnızca **sayılan** veya **özetlenen** veriler: `authorized_keys` (yalnızca anahtar
 sayısı), sshd kayıtları (yalnızca sayılar, en çok deneyen 10 IP/kullanıcı ve son 10 başarılı giriş), sudoers
-(yalnızca `NOPASSWD` içeren satırlar).
+(yalnızca `NOPASSWD` içeren satırlar ve yetki verilen kullanıcı/grup adları gösterilir), paket güncellemeleri
+(paket metadatası asla yenilenmez: `apt update` / `dnf makecache` çalıştırılmaz, sayılar sunucunun kendi son
+güncellemesinden gelir ve yaşı gösterilir).
 
 ## 2. sudo davranışı
 

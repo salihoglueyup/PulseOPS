@@ -45,6 +45,11 @@ def summarize_alerts(t: Telemetry, thresholds: Optional[AlertConfig] = None) -> 
     auth = t.security.auth
     if auth.known and auth.failed_total >= th.ssh_failed_logins and not t.security.fail2ban.protecting_ssh:
         alerts.append(f"SSH kaba kuvvet: {auth.failed_total} deneme, fail2ban yok")
+    updates = t.security.updates
+    if updates.known and updates.security:
+        alerts.append(f"{updates.security} güvenlik güncellemesi bekliyor")
+    if updates.reboot_required:
+        alerts.append("Yeniden başlatma gerekli (yamalar etkin değil)")
     if t.storage.is_cache_bloated:
         alerts.append("BuildKit önbelleği >10GB")
     return alerts

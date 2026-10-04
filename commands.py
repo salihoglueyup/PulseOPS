@@ -232,6 +232,8 @@ def render_status(t: Telemetry, console: Console, config: Optional[Config] = Non
     auth = (f"{sec.auth.failed_total} başarısız / {sec.auth.accepted} başarılı ({sec.auth.window})"
             if sec.auth.known else "okunamadı")
     console.print(f"SSH girişleri: {auth}  ·  fail2ban: {f2b}", markup=False)
+    reboot = {True: "  ·  YENİDEN BAŞLATMA GEREKLİ", False: "", None: ""}[sec.updates.reboot_required]
+    console.print(f"Güncellemeler: {sec.updates.summary}{reboot}", markup=False)
     console.print()
 
     limitations = t.privileges.limitations
@@ -560,6 +562,8 @@ def launch_tui(args: argparse.Namespace, config: Config, collector, log_path=Non
     if config.history.enabled and not isinstance(collector, DemoCollector):
         from history import HistoryStore
         history = HistoryStore()
+    if hasattr(collector, "defer_updates"):
+        collector.defer_updates = True  # first screen at once; pending updates a slow tick later
     app = ServerTUIApp(
         history=history,
         collector=collector,

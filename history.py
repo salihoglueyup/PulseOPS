@@ -9,7 +9,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel
 
@@ -72,8 +72,8 @@ class Sample(BaseModel):
 
 
 class HistoryStore:
-    def __init__(self, path: Optional[Path] = None):
-        self.path = path or default_history_path()
+    def __init__(self, path: Optional[Union[Path, str]] = None):
+        self.path = Path(path) if path else default_history_path()
 
     @contextmanager
     def _db(self):

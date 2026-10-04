@@ -82,6 +82,38 @@ class AccessAudit(BaseModel):
         return [u for u in self.uid0_users if u != "root"]
 
 
+class UpdateStatus(BaseModel):
+    """Pending package updates (from existing metadata) and whether a reboot is needed."""
+
+    manager: str = ""                       # apt, dnf, apk, none; "" = not collected
+    known: bool = False                     # counts could be read
+    total: int = 0
+    security: Optional[int] = None          # None: the package manager cannot tell (apk)
+    security_packages: list[str] = Field(default_factory=list)
+    metadata_age_days: Optional[float] = None
+    reboot_required: Optional[bool] = None  # None: cannot tell
+    reboot_reason: str = ""
+    running_kernel: str = ""
+
+    @property
+    def metadata_stale(self) -> bool:
+        return self.metadata_age_days is not None and self.metadata_age_days > 7
+
+    @property
+    def summary(self) -> str:
+        if not self.manager:
+            return "kontrol ediliyor"
+        if self.manager == "none":
+            return "paket yöneticisi bulunamadı"
+        if not self.known:
+            return "okunamadı (paket önbelleği yok veya root gerekli)"
+        sec = "güvenlik bilgisi yok" if self.security is None else f"{self.security} güvenlik"
+        text = f"{self.total} bekliyor ({sec})"
+        if self.metadata_stale:
+            text += f", listeler {self.metadata_age_days:.0f} gün eski"
+        return text
+
+
 class SecurityOverview(BaseModel):
     ssh: SSHSecurityAudit = Field(default_factory=SSHSecurityAudit)
     firewall_name: str = "UFW"
@@ -95,3 +127,4 @@ class SecurityOverview(BaseModel):
     fail2ban: Fail2banStatus = Field(default_factory=Fail2banStatus)
     auth: AuthActivity = Field(default_factory=AuthActivity)
     access: AccessAudit = Field(default_factory=AccessAudit)
+    updates: UpdateStatus = Field(default_factory=UpdateStatus)
