@@ -63,8 +63,10 @@ def test_account_and_key_changes(base):
                  security__access__admin_users=["deploy", "mallory"],
                  security__access__login_users=["root", "deploy", "mallory"],
                  security__access__authorized_keys={"root": 1, "deploy": 1},
-                 security__access__nopasswd_rules=["mallory ALL=(ALL) NOPASSWD: ALL"])
+                 security__access__nopasswd_rules=["mallory ALL=(ALL) NOPASSWD: ALL"],
+                 security__access__sudo_rule_users=["mallory"])
     got = messages(diff(fingerprint(base), fingerprint(t2)))
+    assert (HIGH, "sudoers ile yetki verildi: mallory") in got
     assert (HIGH, "Yeni UID 0 (root yetkili) hesap: toor") in got
     assert (HIGH, "sudo/wheel grubuna eklendi: mallory") in got
     assert (MEDIUM, "Yeni giriş yapabilen hesap: mallory") in got

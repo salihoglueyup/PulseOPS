@@ -82,6 +82,28 @@ def test_parse_df_kilobyte_fallback():
     assert disks[0].total_bytes == 100 * 1024
 
 
+def test_parse_df_overlay_root_and_container_mounts():
+    # LXC guest / container: `/` is overlay; the host disk shows up again on bind-mounted files
+    guest = pp.parse_df(
+        "Filesystem Type 1024-blocks Used Available Capacity Mounted on\n"
+        "overlay overlay 1000 400 600 40% /\n"
+        "tmpfs tmpfs 64 0 64 0% /dev\n"
+        "/dev/vda ext4 1000 400 600 40% /etc/hosts\n"
+        "/dev/vda ext4 1000 400 600 40% /etc/resolv.conf\n"
+    )
+    assert [(d.mountpoint, d.fstype) for d in guest] == [("/", "overlay")]
+
+    # Docker host: one overlay per container must not flood the disk list
+    host = pp.parse_df(
+        "Filesystem Type 1-blocks Used Available Capacity Mounted on\n"
+        "/dev/sda1 ext4 1000 400 600 40% /\n"
+        "overlay overlay 1000 400 600 40% /var/lib/docker/overlay2/abc/merged\n"
+        "overlay overlay 1000 400 600 40% /mnt/union\n"
+        "/dev/loop3 squashfs 100 100 0 100% /snap/core/1\n"
+    )
+    assert [d.mountpoint for d in host] == ["/"]
+
+
 def test_parse_diskstats_counts_whole_disks_only():
     text = (
         "   8       0 sda 100 0 2000 0 50 0 4000 0 0 0 0\n"

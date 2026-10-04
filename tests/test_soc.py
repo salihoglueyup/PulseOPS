@@ -93,6 +93,27 @@ def test_parse_access():
 
     unknown = pp.parse_access("#UID0\nroot\n#SUDOERS\nUNKNOWN\n#AUTHKEYS\n")
     assert not unknown.sudoers_known and unknown.nopasswd_rules == [] and not unknown.keys_known
+    assert unknown.sudo_rule_users == []
+
+
+def test_sudoers_rules_outside_admin_groups():
+    audit = pp.parse_access(
+        "#SUDOERS\n"
+        "Defaults env_reset\n"
+        "Defaults:deploy !requiretty\n"
+        "Cmnd_Alias RESTART = /bin/systemctl restart nginx\n"
+        "User_Alias OPS = alice, bob\n"
+        "root ALL=(ALL:ALL) ALL\n"
+        "%sudo ALL=(ALL:ALL) ALL\n"
+        "%wheel ALL=(ALL) NOPASSWD: ALL\n"
+        "deploy ALL=(ALL) ALL\n"
+        "ci, backup ALL=(root) NOPASSWD: RESTART\n"
+        "%ops ALL=(ALL) ALL\n"
+        "@includedir /etc/sudoers.d\n"
+    )
+    # A user with sudo rights but no sudo/wheel membership used to be invisible
+    assert audit.sudo_rule_users == ["deploy", "ci", "backup", "%ops"]
+    assert audit.nopasswd_rules == ["%wheel ALL=(ALL) NOPASSWD: ALL", "ci, backup ALL=(root) NOPASSWD: RESTART"]
 
 
 def overview(**kw):

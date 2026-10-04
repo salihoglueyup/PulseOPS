@@ -142,6 +142,8 @@ class SecurityPanel(Widget):
         if access.extra_uid0:
             acc_text.append(f"UID 0: {', '.join(access.extra_uid0)} ⚠\n", style=BAD)
         acc_text.append(f"sudo/wheel: {', '.join(access.admin_users) or '-'}\n", style="#f0f6fc")
+        if access.sudo_rule_users:
+            acc_text.append(f"sudoers kuralı: {', '.join(access.sudo_rule_users)}\n", style=WARN)
         acc_text.append(f"Giriş yapabilen: {len(access.login_users)} hesap\n", style=DIM)
         if not access.sudoers_known:
             acc_text.append("NOPASSWD: bilinmiyor (root gerekli)", style=DIM)

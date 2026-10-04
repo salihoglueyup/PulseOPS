@@ -156,7 +156,7 @@ def cmd_version(args: argparse.Namespace) -> int:
 
 
 PACKAGE_UPDATE_HINT = """PulseOps paket yöneticisiyle kurulmuş; güncellemek için yeni paketi indirip kurun:
-  Debian/Ubuntu:    sudo apt install ./pulseops_<sürüm>_amd64.deb
+  Debian/Ubuntu:    sudo apt install ./pulseops_<sürüm>-1_amd64.deb
   RHEL/Alma/Fedora: sudo dnf install ./pulseops-<sürüm>-1.x86_64.rpm"""
 
 PACKAGE_REMOVE_HINT = """PulseOps paket yöneticisiyle kurulmuş; kaldırmak için:

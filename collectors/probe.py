@@ -100,7 +100,7 @@ AUTH_AWK = (
 # One `priv sh -c` for everything that needs root here: a single sudo call (and auth-log entry)
 ACCESS_PRIV_SCRIPT = (
     "echo '#SUDOERS'; cat /etc/sudoers /etc/sudoers.d/* 2>/dev/null | grep -v '^[[:space:]]*#'"
-    " | grep NOPASSWD | head -n 20 || true; [ -r /etc/sudoers ] || echo UNKNOWN;"
+    " | grep -v '^[[:space:]]*$' | head -n 300 || true; [ -r /etc/sudoers ] || echo UNKNOWN;"
     " echo '#AUTHKEYS';"
     " awk -F: '$7 !~ /(nologin|false|sync|shutdown|halt)$/ {print $1, $6}' /etc/passwd | while read -r u h; do"
     " f=\"$h/.ssh/authorized_keys\"; if [ ! -x \"$h\" ] || [ ! -x \"$h/.ssh\" -a -e \"$h/.ssh\" ]; then echo \"$u ?\"; continue; fi;"
@@ -114,7 +114,7 @@ SLOW_SECTIONS = [
     ("HOST", "show /proc/sys/kernel/hostname; show /proc/sys/kernel/osrelease; show /etc/os-release"),
     ("MACHINE_ID", "show /etc/machine-id || show /var/lib/dbus/machine-id"),
     ("SYSCONF", "nproc || grep -c ^processor /proc/cpuinfo; getconf CLK_TCK || echo 100; getconf PAGESIZE || echo 4096"),
-    ("DISK", "df -P -T -B1 -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs || df -P -T -k"),
+    ("DISK", "df -P -T -B1 -x tmpfs -x devtmpfs -x squashfs -x efivarfs || df -P -T -k"),
     (
         "PORT_OWNERS",
         "if command -v ss >/dev/null; then priv ss -lntup;"

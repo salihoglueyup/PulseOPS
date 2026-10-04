@@ -115,8 +115,19 @@ def parse_meminfo(text: str) -> MemoryMetric:
 
 # --- disks --------------------------------------------------------------------------------------
 
+# Pseudo/ephemeral filesystems (the -k fallback cannot exclude them with -x)
+_DF_SKIP_FSTYPES = {"tmpfs", "devtmpfs", "squashfs", "efivarfs", "proc", "sysfs", "devpts", "cgroup", "cgroup2"}
+# Container runtimes' own mounts (one overlay per running container on a Docker host)
+_DF_SKIP_PREFIXES = ("/var/lib/docker/", "/var/lib/containers/", "/run/containerd/", "/run/docker/", "/snap/")
+# Single files bind-mounted into containers / LXC guests; they repeat the host disk under a bogus name
+_DF_BIND_FILES = {"/etc/hosts", "/etc/hostname", "/etc/resolv.conf"}
+
+
 def parse_df(text: str) -> list[DiskPartition]:
-    """`df -P -T -B1` (or -k, detected from the header)."""
+    """`df -P -T -B1` (or -k, detected from the header).
+
+    An overlay root (containers, LXC guests, live systems) is kept: it is the machine's `/`.
+    """
     lines = text.strip().splitlines()
     if not lines:
         return []
@@ -133,6 +144,10 @@ def parse_df(text: str) -> list[DiskPartition]:
         except ValueError:
             continue
         mount = " ".join(parts[6:])
+        if fstype in _DF_SKIP_FSTYPES or mount in _DF_BIND_FILES or mount.startswith(_DF_SKIP_PREFIXES):
+            continue
+        if fstype == "overlay" and mount != "/":
+            continue
         if total <= 0 or (device, mount) in seen_devices:
             continue
         seen_devices.add((device, mount))
@@ -465,6 +480,32 @@ def parse_auth(text: str) -> AuthActivity:
     return activity
 
 
+# Groups whose members are already listed from the group database (ADMINS block)
+_ADMIN_GROUPS = {"%sudo", "%wheel", "%admin"}
+_SUDOERS_SPEC = re.compile(r"^(\S+)\s+\S[^=]*=")
+
+
+def sudo_rule_subjects(lines: list[str]) -> list[str]:
+    """Who a set of (comment-free) sudoers lines grants rights to: `deploy ALL=(ALL) ALL` -> deploy.
+
+    Defaults, aliases and includes are skipped, as are root and the sudo/wheel/admin groups.
+    """
+    subjects: list[str] = []
+    for line in lines:
+        # "ci, backup ALL=..." -> "ci,backup ALL=...": the user list is then the first token
+        m = _SUDOERS_SPEC.match(re.sub(r"\s*,\s*", ",", line))
+        if not m:
+            continue
+        head = m.group(1)
+        if head.startswith(("Defaults", "@include", "#include")) or head.endswith("_Alias"):
+            continue
+        for subject in head.split(","):
+            subject = subject.strip()
+            if subject and subject not in ("root", "ALL") and subject not in _ADMIN_GROUPS and subject not in subjects:
+                subjects.append(subject)
+    return subjects
+
+
 def parse_access(text: str) -> AccessAudit:
     audit = AccessAudit()
     block = None
@@ -499,5 +540,6 @@ def parse_access(text: str) -> AccessAudit:
         sudoers_lines.remove("UNKNOWN")
     else:
         audit.sudoers_known = "SUDOERS" in text
-    audit.nopasswd_rules = sudoers_lines[:20]
+    audit.nopasswd_rules = [line for line in sudoers_lines if "NOPASSWD" in line][:20]
+    audit.sudo_rule_users = sudo_rule_subjects(sudoers_lines) if audit.sudoers_known else []
     return audit

@@ -47,6 +47,8 @@ def _soc_section(security: SecurityOverview) -> list[str]:
     lines.append(f"* **UID 0 hesaplar:** {', '.join(f'`{_md(u)}`' for u in access.uid0_users) or '-'}"
                  + (" 🚨 root dışı UID 0 hesap var!" if access.extra_uid0 else ""))
     lines.append(f"* **sudo/wheel üyeleri:** {', '.join(f'`{_md(u)}`' for u in access.admin_users) or '-'}")
+    if access.sudo_rule_users:
+        lines.append(f"* **sudoers ile yetkili:** {', '.join(f'`{_md(u)}`' for u in access.sudo_rule_users)}")
     if access.sudoers_known:
         lines.append(f"* **NOPASSWD kuralları:** {len(access.nopasswd_rules)}")
         lines += [f"  * `{_md(rule)}`" for rule in access.nopasswd_rules]

@@ -71,6 +71,8 @@ class AccessAudit(BaseModel):
     login_users: list[str] = Field(default_factory=list)    # accounts with a real login shell
     sudoers_known: bool = False
     nopasswd_rules: list[str] = Field(default_factory=list)
+    # Users ("deploy") and groups ("%ops") granted rights by their own sudoers rule, outside sudo/wheel
+    sudo_rule_users: list[str] = Field(default_factory=list)
     keys_known: bool = False
     authorized_keys: dict[str, int] = Field(default_factory=dict)
     authorized_keys_unknown: list[str] = Field(default_factory=list)  # home or ~/.ssh not readable

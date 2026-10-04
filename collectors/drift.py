@@ -55,6 +55,7 @@ def fingerprint(t: Telemetry) -> Fingerprint:
     fp["uid0_users"] = sorted(access.uid0_users) if access.uid0_users else None
     fp["admin_users"] = sorted(access.admin_users) if access.login_users else None
     fp["nopasswd_rules"] = sorted(access.nopasswd_rules) if access.sudoers_known else None
+    fp["sudo_rule_users"] = sorted(access.sudo_rule_users) if access.sudoers_known else None
     fp["authorized_keys"] = (
         sorted([f"{user}={count}" for user, count in access.authorized_keys.items()]
                + [f"{user}=?" for user in access.authorized_keys_unknown])
@@ -123,6 +124,12 @@ def diff(old: Fingerprint, new: Fingerprint) -> list[Change]:
             add("sudo", HIGH, f"Yeni NOPASSWD sudo kuralı: {rule}")
         for rule in removed:
             add("sudo", INFO, f"NOPASSWD sudo kuralı kaldırıldı: {rule}")
+    if both("sudo_rule_users"):
+        added, removed = _added_removed(old["sudo_rule_users"], new["sudo_rule_users"])
+        for subject in added:
+            add("sudo", HIGH, f"sudoers ile yetki verildi: {subject}")
+        for subject in removed:
+            add("sudo", INFO, f"sudoers yetkisi kaldırıldı: {subject}")
     if both("authorized_keys"):
         before = dict(item.split("=", 1) for item in old["authorized_keys"])
         after = dict(item.split("=", 1) for item in new["authorized_keys"])

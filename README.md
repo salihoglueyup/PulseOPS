@@ -62,7 +62,7 @@ Paket yöneticisiyle kurmak isterseniz [Releases](https://github.com/salihogluey
 sayfasındaki paketleri kullanın (yalnızca glibc 2.28+ gerekir):
 
 ```bash
-sudo apt install ./pulseops_<sürüm>_amd64.deb            # Debian / Ubuntu
+sudo apt install ./pulseops_<sürüm>-1_amd64.deb            # Debian / Ubuntu
 sudo dnf install ./pulseops-<sürüm>-1.x86_64.rpm         # RHEL / Alma / Rocky / Fedora
 ```
 
