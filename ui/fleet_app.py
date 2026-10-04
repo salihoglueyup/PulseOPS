@@ -141,7 +141,8 @@ class FleetApp(App):
             entry.in_flight = False
             self.call_from_thread(self._set_error, entry, str(e))
             return
-        score, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
+        score, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage,
+                                        containers=t.containers)
         alerts = summarize_alerts(t, self.config.alerts)
         changes_24h, high_change = 0, False
         if self.history is not None:

@@ -56,6 +56,10 @@ def fingerprint(t: Telemetry) -> Fingerprint:
     fp["admin_users"] = sorted(access.admin_users) if access.login_users else None
     fp["nopasswd_rules"] = sorted(access.nopasswd_rules) if access.sudoers_known else None
     fp["sudo_rule_users"] = sorted(access.sudo_rule_users) if access.sudoers_known else None
+    # Only when docker itself was readable: otherwise "no risky container" just means "could not look"
+    fp["container_risks"] = sorted(
+        f"{c.name}: {r.text}" for c in t.containers if c.security for r in c.security.risks if r.severity == "HIGH"
+    ) if t.privileges.docker_access else None
     hard = sec.hardening
     fp["suid_files"] = sorted(hard.suid_files) if hard.known else None
     fp["suspicious_suid"] = sorted(hard.suspicious_suid) if hard.suspicious_suid is not None else None
@@ -138,6 +142,12 @@ def diff(old: Fingerprint, new: Fingerprint) -> list[Change]:
             add("sudo", HIGH, f"sudoers ile yetki verildi: {subject}")
         for subject in removed:
             add("sudo", INFO, f"sudoers yetkisi kaldırıldı: {subject}")
+    if both("container_risks"):
+        added, removed = _added_removed(old["container_risks"], new["container_risks"])
+        for risk in added:
+            add("container", HIGH, f"Riskli konteyner: {risk}")
+        for risk in removed:
+            add("container", INFO, f"Konteyner riski kalktı: {risk}")
     if both("suid_files"):
         added, removed = _added_removed(old["suid_files"], new["suid_files"])
         for path in added:

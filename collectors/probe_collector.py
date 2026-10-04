@@ -290,6 +290,9 @@ class ProbeCollector(BaseCollector):
 
         self._routes_base = self._nginx.parse_config_text(s.get("NGINX", ""))
         self._containers = self._parse_containers(s.get("DOCKER", ""))
+        security = pp.parse_docker_security(s.get("DOCKER_SEC", ""))
+        for c in self._containers:
+            c.security = security.get(c.name)
 
         services = self._services.parse_systemctl_units(s.get("SERVICES", ""), s.get("UNIT_FILES", ""))
         critical_prefixes = tuple(name.split(".")[0] for name, _ in CRITICAL_SERVICES)

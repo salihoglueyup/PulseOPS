@@ -4,6 +4,7 @@ from rich.panel import Panel
 from ui.safe import PlainTable as Table
 from rich.text import Text
 
+from models.docker import ContainerSummary
 from models.security import SecurityOverview
 
 DIM = "#8b949e"
@@ -16,6 +17,7 @@ class SecurityPanel(Widget):
     """Widget displaying server security visibility, SSH posture, and firewall status in Clean Minimalist Silver & White."""
 
     security: reactive[SecurityOverview] = reactive(SecurityOverview)
+    containers: reactive[list[ContainerSummary]] = reactive(list)
 
     def render(self) -> Panel:
         sec = self.security
@@ -76,6 +78,8 @@ class SecurityPanel(Widget):
         grid.add_row(Panel(cards_table, border_style="#30363d", padding=(0, 1)))
         grid.add_row(self._render_soc(sec))
         grid.add_row(self._render_hardening(sec))
+        if self.containers:
+            grid.add_row(self._render_containers())
 
         # Bottom recommendations list
         rec_table = Table(expand=True, box=None, padding=(0, 1))
@@ -105,6 +109,34 @@ class SecurityPanel(Widget):
             border_style="#30363d",
             padding=(0, 0),
         )
+
+    def _render_containers(self) -> Panel:
+        inspected = [c for c in self.containers if c.security is not None]
+        risky = [c for c in inspected if any(r.severity != "LOW" for r in c.security.risks)]
+        title = f"[bold #f0f6fc]KONTEYNER GÜVENLİĞİ · {len(risky)}/{len(inspected)} RİSKLİ[/bold #f0f6fc]"
+        if not inspected:
+            return Panel(Text("Çalışan konteyner yok veya docker okunamadı (docker grubu / root gerekli).", style=DIM),
+                         title=title, border_style="#30363d", padding=(0, 1))
+        table = Table(expand=True, box=None, padding=(0, 1))
+        table.add_column("KONTEYNER", ratio=2)
+        table.add_column("KULLANICI", ratio=1)
+        table.add_column("DURUM", ratio=1)
+        table.add_column("BULGULAR", ratio=5)
+        order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+        for c in sorted(inspected, key=lambda c: min((order[r.severity] for r in c.security.risks), default=3)):
+            s = c.security
+            risks = sorted(s.risks, key=lambda r: order[r.severity])
+            findings = Text()
+            for i, r in enumerate(risks):
+                findings.append(("; " if i else "") + r.text,
+                                style=BAD if r.severity == "HIGH" else WARN if r.severity == "MEDIUM" else DIM)
+            if not risks:
+                findings.append("sorun yok ✓", style=GOOD)
+            state = Text(s.health or "çalışıyor", style=BAD if s.health == "unhealthy" else "#f0f6fc")
+            if s.restart_count:
+                state.append(f" ↻{s.restart_count}", style=WARN if s.restart_count >= 5 else DIM)
+            table.add_row(Text(c.name, style="#f0f6fc"), Text(s.user or "root", style=DIM), state, findings)
+        return Panel(table, title=title, border_style="#30363d", padding=(0, 1))
 
     def _render_hardening(self, sec: SecurityOverview) -> Panel:
         hard = sec.hardening

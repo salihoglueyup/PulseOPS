@@ -88,6 +88,7 @@ def calculate_audit_score(
     routes: list[ProxyRoute],
     security: Optional[SecurityOverview] = None,
     storage: Optional[StorageOverview] = None,
+    containers: Optional[list[ContainerSummary]] = None,
 ) -> tuple[int, str]:
     """Calculates an infrastructure health & security score (0-100) and grade."""
     score = 100
@@ -124,6 +125,10 @@ def calculate_audit_score(
         failed = security.hardening.failed
         score -= 15 * sum(1 for c in failed if c.severity == "HIGH")
         score -= min(9, 3 * sum(1 for c in failed if c.severity == "MEDIUM"))
+
+    # Containers that can take over the host (-10 each, at most -30)
+    risky = [c for c in (containers or []) if c.security and any(r.severity == "HIGH" for r in c.security.risks)]
+    score -= min(30, 10 * len(risky))
 
     # 502 / 504 Bad Gateway routes (-10 each)
     bad_routes = [r for r in routes if r.http_status in (502, 504)]
@@ -168,7 +173,7 @@ def generate_audit_markdown(
     storage: Optional[StorageOverview] = None,
 ) -> str:
     now_str = time.strftime("%Y-%m-%d %H:%M:%S")
-    score, grade = calculate_audit_score(snapshot, ports, routes, security, storage)
+    score, grade = calculate_audit_score(snapshot, ports, routes, security, storage, containers)
 
     md = [
         "```",
@@ -295,7 +300,8 @@ def generate_audit_markdown(
     ])
 
     for b in backups:
-        md.append(f"| `{b.name}` | {b.mechanism} | {b.schedule} | {b.last_run or 'Kayıt yok'} | {b.status.value} | {b.exit_code if b.exit_code is not None else '-'} | `{b.target_path or '-'}` |")
+        md.append(f"| `{_md(b.name)}` | {_md(b.mechanism)} | {_md(b.schedule)} | {_md(b.last_run or 'Kayıt yok')} | "
+                  f"{b.status.value} | {b.exit_code if b.exit_code is not None else '-'} | `{_md(b.target_path or '-')}` |")
 
     # 8. Docker Containers
     md.extend([
@@ -303,16 +309,22 @@ def generate_audit_markdown(
         "---",
         "",
         "## 8. 🐳 DOCKER KONTEYNERLERİ",
-        "| Konteyner Adı | İmaj | Durum | Port Eşleşmeleri |",
-        "| :--- | :--- | :--- | :--- |",
+        "| Konteyner Adı | İmaj | Durum | Port Eşleşmeleri | Güvenlik |",
+        "| :--- | :--- | :--- | :--- | :--- |",
     ])
 
     if not containers:
-        md.append("| Aktif Docker konteyneri bulunamadı | - | - | - |")
+        md.append("| Aktif Docker konteyneri bulunamadı | - | - | - | - |")
     else:
         for c in containers:
             ports_joined = ", ".join(c.ports) if c.ports else "Dahili"
-            md.append(f"| **{c.name}** | `{c.image}` | {c.status} | `{ports_joined}` |")
+            if c.security is None:
+                sec_text = "-"
+            else:
+                risks = [f"{'⛔' if r.severity == 'HIGH' else '⚠️' if r.severity == 'MEDIUM' else 'ℹ️'} {r.text}"
+                         for r in c.security.risks]
+                sec_text = "; ".join(risks) or "✓"
+            md.append(f"| **{_md(c.name)}** | `{_md(c.image)}` | {_md(c.status)} | `{_md(ports_joined)}` | {_md(sec_text)} |")
 
     # 9. Storage & BuildKit Analyzer
     if storage:

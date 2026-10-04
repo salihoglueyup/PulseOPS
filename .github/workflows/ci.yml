@@ -66,6 +66,10 @@ jobs:
           PULSEOPS_TEST_SSH_USER: runner
           PULSEOPS_TEST_SSH_KEY: ${{ runner.temp }}/id_ci
         run: pytest -q tests/test_ssh_integration.py tests/test_ssh_security.py
+      - name: Container security against real containers (runner has docker)
+        env:
+          PULSEOPS_TEST_DOCKER: "1"
+        run: pytest -q tests/test_containers.py
 
   distros:
     name: Probe on ${{ matrix.image }}

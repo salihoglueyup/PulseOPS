@@ -136,6 +136,14 @@ SLOW_SECTIONS = [
         " 'SHA '*) f=${line#SHA }; printf 'FILE:%s\\n' \"$f\"; head -n 1 \"$f\";; esac; done",
     ),
     ("DOCKER", "command -v docker >/dev/null && priv docker ps -a --format '{{json .}}'"),
+    (
+        "DOCKER_SEC",
+        # Escape-relevant settings of running containers, one line each ('|' never occurs in names)
+        "command -v docker >/dev/null && ids=$(priv docker ps -q) && [ -n \"$ids\" ] && priv docker inspect --format"
+        " '{{.Name}}|{{.Config.User}}|{{.HostConfig.Privileged}}|{{.HostConfig.NetworkMode}}|{{.HostConfig.PidMode}}"
+        "|{{json .HostConfig.CapAdd}}|{{.RestartCount}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}"
+        "|{{range .Mounts}}{{.Source}}>{{.Destination}}>{{.RW}};{{end}}|{{.HostConfig.ReadonlyRootfs}}' $ids",
+    ),
     ("DOCKER_DF", "command -v docker >/dev/null && priv docker system df --format '{{json .}}'"),
     (
         "CONTAINERD_SZ",

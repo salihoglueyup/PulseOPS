@@ -1,9 +1,11 @@
 """Pure parsers for probe sections. No I/O, no state: everything stateful lives in ProbeCollector."""
 import datetime
+import json
 import re
 from typing import NamedTuple
 
 from models.ports import ListeningPort
+from models.docker import ContainerSecurity
 from models.security import (AccessAudit, AuthActivity, CountedItem, Fail2banJail, Fail2banStatus, HardeningAudit,
                              HardeningCheck, LoginEvent, UpdateStatus)
 from models.system import DiskPartition, FirewallStatus, MemoryMetric
@@ -652,6 +654,32 @@ def parse_hardening(text: str) -> HardeningAudit:
                            passed=not audit.empty_password_users, detail=", ".join(audit.empty_password_users),
                            problem=f"Boş parolalı hesap: {', '.join(audit.empty_password_users)}"))
     return audit
+
+
+def parse_docker_security(text: str) -> dict[str, ContainerSecurity]:
+    """`docker inspect` lines (see DOCKER_SEC) -> {container name: settings}."""
+    result: dict[str, ContainerSecurity] = {}
+    for line in text.splitlines():
+        parts = line.strip().split("|")
+        if len(parts) != 10 or not parts[0]:
+            continue
+        name, user, privileged, net, pid, caps, restarts, health, mounts, ro = parts
+        try:
+            cap_list = json.loads(caps) or []
+        except ValueError:
+            cap_list = []
+        mount_list = []
+        for m in filter(None, mounts.split(";")):
+            fields = m.split(">")
+            if len(fields) == 3:
+                mount_list.append((fields[0], fields[1], fields[2] == "true"))
+        result[name.lstrip("/")] = ContainerSecurity(
+            user=user, privileged=privileged == "true", network_mode=net, pid_mode=pid,
+            cap_add=[str(c) for c in cap_list if isinstance(c, str)][:20],
+            restart_count=int(restarts) if restarts.isdigit() else 0, health=health,
+            mounts=mount_list[:50], read_only_root=ro == "true",
+        )
+    return result
 
 
 def parse_access(text: str) -> AccessAudit:

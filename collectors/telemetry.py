@@ -53,6 +53,16 @@ def summarize_alerts(t: Telemetry, thresholds: Optional[AlertConfig] = None) -> 
     for check in t.security.hardening.failed:
         if check.severity == "HIGH":
             alerts.append(check.problem or f"Sertleştirme başarısız: {check.title}")
+    for c in t.containers:
+        if c.security is None:
+            continue
+        high = [r.text for r in c.security.risks if r.severity == "HIGH"]
+        if high:
+            alerts.append(f"Konteyner {c.name}: {high[0]}" + (f" (+{len(high) - 1})" if len(high) > 1 else ""))
+        if c.security.health == "unhealthy":
+            alerts.append(f"Konteyner {c.name} sağlıksız (healthcheck)")
+        if c.security.restart_count >= 5:
+            alerts.append(f"Konteyner {c.name} {c.security.restart_count} kez yeniden başladı")
     if t.storage.is_cache_bloated:
         alerts.append("BuildKit önbelleği >10GB")
     return alerts

@@ -171,7 +171,8 @@ def make_collector(args: argparse.Namespace, interactive: bool = True) -> BaseCo
 
 
 def _score(t: Telemetry) -> tuple[int, str]:
-    return calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
+    return calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage,
+                                        containers=t.containers)
 
 
 def _config(args: argparse.Namespace) -> Config:

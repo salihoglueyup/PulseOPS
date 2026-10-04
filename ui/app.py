@@ -424,7 +424,8 @@ class ServerTUIApp(App):
                 changes = self.history.detect_changes(t)
                 self.history.take_unreported(host_key(t), "tui")  # what we show live is not "offline"
             if t.collected_at - self._last_sample_at >= 60:
-                score, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
+                score, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage,
+                                        containers=t.containers)
                 self.history.record_sample(t, score, len(summarize_alerts(t, self.alert_thresholds)))
                 self._last_sample_at = t.collected_at
         except Exception:
@@ -508,6 +509,7 @@ class ServerTUIApp(App):
         self.service_panel.containers = t.containers
         self.services_table.services = t.services
         self.database_panel.databases = t.databases
+        self.security_panel.containers = t.containers
         self.security_panel.security = t.security
         self.storage_panel.storage = t.storage
         if t.logs:
@@ -518,7 +520,8 @@ class ServerTUIApp(App):
         self.alert_ticker.alerts_count = len(alerts)
         self.alert_ticker.alert_snippet = "  •  ".join(alerts[:3])
 
-        score, grade = calculate_audit_score(snapshot, t.ports, t.routes, security=t.security, storage=t.storage)
+        score, grade = calculate_audit_score(snapshot, t.ports, t.routes, security=t.security, storage=t.storage,
+                                        containers=t.containers)
         self.vitals_panel.health_score = score
         self.vitals_panel.health_grade = grade
 
