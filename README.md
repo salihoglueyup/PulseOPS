@@ -135,6 +135,22 @@ pulseops history [--since 7d]   # kayıtlı trendler ve güvenlik değişiklikle
 0 * * * * pulseops check --warn 70 || pulseops report -f md -o - | mail -s "PulseOps uyarısı" ops@ornek.com
 ```
 
+Makine tarafından okunacak çıktılar (çıkış kodu her biçimde aynıdır):
+
+```bash
+pulseops check -f json                     # skor, uyarılar, değişiklikler, güncellemeler, sertleştirme...
+pulseops check --all -f json               # filo: sunucu başına nesne + durum sayıları
+# Prometheus: node_exporter textfile collector için atomik yazım (yarım dosya asla okunmaz)
+*/5 * * * * pulseops check --all -f prometheus -o /var/lib/node_exporter/textfile/pulseops.prom
+```
+
+Prometheus metrikleri: `pulseops_up`, `pulseops_check_state`, `pulseops_score`, `pulseops_alerts`,
+`pulseops_security_changes`, `pulseops_security_updates`, `pulseops_pending_updates`, `pulseops_reboot_required`,
+`pulseops_hardening_failed_checks{severity}`, `pulseops_risky_containers`, `pulseops_ssh_failed_logins`,
+`pulseops_firewall_active`, `pulseops_exposed_risky_ports`, `pulseops_cpu_percent`, `pulseops_memory_percent`,
+`pulseops_disk_used_percent{mountpoint}` (etiketler: `target`, `hostname`). Okunamayan değerler 0 olarak değil,
+hiç yazılmaz.
+
 > **İpucu:** Tüm komutlar uzak sunucu için de çalışır: `pulseops check root@sunucu --key ~/.ssh/id_ed25519`
 
 

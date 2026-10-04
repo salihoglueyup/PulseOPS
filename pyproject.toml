@@ -22,6 +22,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
     "hypothesis>=6.100",
+    "prometheus-client>=0.17",
     "ruff>=0.5.0",
 ]
 
@@ -31,7 +32,7 @@ pulsetui = "cli:main"
 server-tui = "cli:main"
 
 [tool.setuptools]
-py-modules = ["cli", "main", "commands", "installer", "version", "pulseops_config", "logging_setup", "history", "notify"]
+py-modules = ["cli", "main", "commands", "installer", "version", "pulseops_config", "logging_setup", "history", "notify", "exporters"]
 
 [tool.setuptools.dynamic]
 version = {attr = "version.__version__"}

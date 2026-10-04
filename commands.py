@@ -4,6 +4,7 @@ import sys
 import json
 import getpass
 import argparse
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -350,6 +351,48 @@ STATE_LABEL = {EXIT_OK: "OK", EXIT_WARNING: "WARNING", EXIT_CRITICAL: "CRITICAL"
 SEVERITY_RANK = {EXIT_OK: 0, EXIT_WARNING: 1, EXIT_UNKNOWN: 2, EXIT_CRITICAL: 3}
 
 
+@dataclass
+class CheckResult:
+    """Outcome of `check` for one host; rendered as a Nagios line, JSON or Prometheus metrics."""
+
+    target: str
+    code: int
+    line: str
+    telemetry: Optional[Telemetry] = None
+    score: Optional[int] = None
+    grade: str = ""
+    alerts: list = field(default_factory=list)
+    changes: list = field(default_factory=list)
+    error: str = ""
+
+    @property
+    def state(self) -> str:
+        return STATE_LABEL[self.code]
+
+    def as_dict(self) -> dict:
+        data = {"target": self.target, "state": self.state, "exit_code": self.code, "score": self.score,
+                "grade": self.grade, "alerts": self.alerts,
+                "changes": [{"severity": c.severity, "category": c.category, "message": c.message} for c in self.changes]}
+        if self.error:
+            data["error"] = self.error
+        t = self.telemetry
+        if t is not None:
+            sec = t.security
+            data["hostname"] = t.snapshot.hostname
+            data["machine_id"] = t.machine_id
+            data["security"] = {
+                "pending_updates": sec.updates.total if sec.updates.known else None,
+                "security_updates": sec.updates.security if sec.updates.known else None,
+                "reboot_required": sec.updates.reboot_required,
+                "hardening_failed": {sev: sum(1 for c in sec.hardening.failed if c.severity == sev)
+                                     for sev in ("HIGH", "MEDIUM", "LOW")} if sec.hardening.known else None,
+                "risky_containers": [c.name for c in t.containers if c.security
+                                     and any(r.severity == "HIGH" for r in c.security.risks)],
+                "ssh_failed_logins": sec.auth.failed_total if sec.auth.known else None,
+            }
+        return data
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     config = _config(args)
     args.warn = config.check.warn if args.warn is None else args.warn
@@ -360,12 +403,45 @@ def cmd_check(args: argparse.Namespace) -> int:
     if getattr(args, "all", False) or getattr(args, "group", None):
         return _check_fleet(args)
     t = _collect_or_exit(build_collector(args, interactive=False))
-    code, line = _check_telemetry(args, t)
-    print(line)
-    return code
+    result = _check_telemetry(args, t)
+    return _emit_check(args, [result], fleet=False)
 
 
-def _check_telemetry(args: argparse.Namespace, t: Telemetry) -> tuple[int, str]:
+def _emit_check(args: argparse.Namespace, results: list[CheckResult], fleet: bool) -> int:
+    worst = max((r.code for r in results), key=lambda c: SEVERITY_RANK[c])
+    fmt = getattr(args, "format", "nagios") or "nagios"
+    if fmt == "json":
+        if fleet:
+            counts = {label: sum(1 for r in results if r.state == label) for label in STATE_LABEL.values()}
+            content = json.dumps({"state": STATE_LABEL[worst], "exit_code": worst, "counts": counts,
+                                  "hosts": [r.as_dict() for r in results]}, ensure_ascii=False, indent=2)
+        else:
+            content = json.dumps(results[0].as_dict(), ensure_ascii=False, indent=2)
+    elif fmt == "prometheus":
+        from exporters import prometheus_text
+        content = prometheus_text(results)
+    else:
+        lines = [r.line for r in results]
+        if fleet:
+            counts = {label: sum(1 for r in results if r.state == label) for label in STATE_LABEL.values()}
+            lines.append("PULSEOPS FLEET - " + ", ".join(f"{n} {label}" for label, n in counts.items() if n)
+                         + f" ({len(results)} sunucu)")
+        content = "\n".join(lines)
+
+    output = getattr(args, "output", None)
+    if output and output != "-":
+        from exporters import write_atomic
+        try:
+            write_atomic(Path(output), content if content.endswith("\n") else content + "\n")
+        except OSError as e:
+            print(f"❌ {output} yazılamadı: {e}", file=sys.stderr)
+            return EXIT_UNKNOWN
+    else:
+        print(content.rstrip("\n"))
+    return worst
+
+
+def _check_telemetry(args: argparse.Namespace, t: Telemetry) -> CheckResult:
     config = _config(args)
     score, grade = _score(t)
     alerts = summarize_alerts(t, config.alerts)
@@ -393,7 +469,9 @@ def _check_telemetry(args: argparse.Namespace, t: Telemetry) -> tuple[int, str]:
     # Single line + perfdata, the format monitoring systems (Nagios, Icinga, Zabbix) expect
     line = (f"PULSEOPS {label} - {t.snapshot.hostname} skor {score}/100 {grade}{summary}"
             f" | score={score};{args.warn};{args.crit};0;100 alerts={len(alerts)} changes={len(new_changes)}")
-    return code, line
+    target = getattr(args, "target", None) or getattr(args, "host", None) or ("demo" if args.demo else "local")
+    return CheckResult(target=target, code=code, line=line, telemetry=t, score=score, grade=grade,
+                       alerts=alerts, changes=new_changes)
 
 
 def fleet_targets(config: Config, group: Optional[str] = None) -> list[str]:
@@ -416,15 +494,18 @@ def _target_args(args: argparse.Namespace, target: str) -> argparse.Namespace:
     return one
 
 
-def _check_one_target(args: argparse.Namespace, target: str) -> tuple[int, str]:
+def _check_one_target(args: argparse.Namespace, target: str) -> CheckResult:
     one = _target_args(args, target)
     try:
         t = collect_telemetry(make_collector(one, interactive=False))
     except Exception as e:  # unreachable host, auth failure, probe error...
         message = str(e) if isinstance(e, CollectorError) else f"{target}: {e}"
         _notify_unreachable(one, target, message)
-        return EXIT_UNKNOWN, f"PULSEOPS UNKNOWN - {target}: {message} | score=;;;0;100"
-    return _check_telemetry(one, t)
+        return CheckResult(target=target, code=EXIT_UNKNOWN, error=message,
+                           line=f"PULSEOPS UNKNOWN - {target}: {message} | score=;;;0;100")
+    result = _check_telemetry(one, t)
+    result.target = target
+    return result
 
 
 def _check_fleet(args: argparse.Namespace) -> int:
@@ -441,11 +522,7 @@ def _check_fleet(args: argparse.Namespace) -> int:
         return EXIT_UNKNOWN
     with ThreadPoolExecutor(max_workers=min(config.fleet.parallel, len(targets))) as pool:
         results = list(pool.map(lambda target: _check_one_target(args, target), targets))
-    for _, line in results:
-        print(line)
-    counts = {label: sum(1 for code, _ in results if STATE_LABEL[code] == label) for label in STATE_LABEL.values()}
-    print("PULSEOPS FLEET - " + ", ".join(f"{n} {label}" for label, n in counts.items() if n) + f" ({len(targets)} sunucu)")
-    return max((code for code, _ in results), key=lambda c: SEVERITY_RANK[c])
+    return _emit_check(args, results, fleet=True)
 
 
 def _notify_unreachable(args: argparse.Namespace, target: str, message: str) -> None:
@@ -711,6 +788,10 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     p_check.add_argument("--group", default=None, help="Yalnızca bu filo grubunu kontrol et")
     p_check.add_argument("--warn", type=int, default=None, help="Bu skorun altı WARNING (varsayılan: config, yoksa 80)")
     p_check.add_argument("--crit", type=int, default=None, help="Bu skorun altı CRITICAL (varsayılan: config, yoksa 50)")
+    p_check.add_argument("-f", "--format", choices=["nagios", "json", "prometheus"], default="nagios",
+                         help="Çıktı: nagios (tek satır + perfdata), json veya prometheus (node_exporter textfile)")
+    p_check.add_argument("-o", "--output", default=None,
+                         help="Çıktıyı dosyaya atomik olarak yaz (ör. /var/lib/node_exporter/textfile/pulseops.prom)")
     p_check.set_defaults(func=cmd_check)
 
     p_config = sub.add_parser("config", help="Geçerli yapılandırmayı gösterir veya şablon oluşturur")
