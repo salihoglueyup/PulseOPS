@@ -108,6 +108,23 @@ ACCESS_PRIV_SCRIPT = (
     " if [ -r \"$f\" ]; then echo \"$u $(grep -cvE '^[[:space:]]*(#|$)' \"$f\")\"; else echo \"$u ?\"; fi; done"
 )
 
+# Storage details that need root to be complete: one `priv sh -c` (a single sudo call). All bounded:
+# du runs at idle IO priority with a time limit; partial du output is still useful (RC 124 = cut).
+STORAGE_PRIV_SCRIPT = (
+    "if [ \"$(id -u)\" = 0 ]; then echo '#SCOPE full'; else echo '#SCOPE user'; fi;"
+    " echo '#VARLOG'; du -sxk /var/log 2>/dev/null | cut -f1;"
+    " echo '#BIGLOGS'; find /var/log -xdev -type f -size +50M -printf '%s %p\\n' 2>/dev/null | sort -nr | head -n 10;"
+    " echo '#DOCKERLOGS'; find /var/lib/docker/containers -maxdepth 2 -name '*-json.log' -size +10M"
+    " -printf '%s %p\\n' 2>/dev/null | sort -nr | head -n 10;"
+    " echo '#DELETED'; find /proc/[0-9]*/fd -lname '/*(deleted)' -printf '%p\\t%l\\n' 2>/dev/null | head -n 500"
+    " | while IFS='\t' read -r fd target; do pid=${fd#/proc/}; pid=${pid%%/*}; c=?;"
+    " read -r c < /proc/$pid/comm 2>/dev/null; s=$(stat -L -c '%s %i' \"$fd\" 2>/dev/null) || continue;"
+    " echo \"$s $pid $c $target\"; done;"
+    " echo '#TOPDIRS'; io=; command -v ionice >/dev/null && io='ionice -c3';"
+    " out=$(timeout 25 nice -n 19 $io du -xk -d 1 / 2>/dev/null); rc=$?;"
+    " printf '%s\\n' \"$out\" | sort -nr | head -n 13; echo \"RC $rc\""
+)
+
 SEARCH_ROOTS = "/var/backups /var/www /opt /srv /home /root ."
 
 SLOW_SECTIONS = [
@@ -148,8 +165,10 @@ SLOW_SECTIONS = [
     (
         "CONTAINERD_SZ",
         # du walks every file of the image store; keep it low priority and bounded
-        "for d in /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs /var/lib/docker/overlay2; do"
-        " [ -d \"$d\" ] || continue; priv timeout 10 nice -n 19 du -sh \"$d\"; break; done",
+        # Docker >= 29 (containerd image store) keeps it under /var/lib/docker/containerd/daemon/
+        "for d in /var/lib/docker/containerd/daemon/io.containerd.snapshotter.v1.overlayfs"
+        " /var/lib/containerd/io.containerd.snapshotter.v1.overlayfs /var/lib/docker/overlay2; do"
+        " [ -d \"$d\" ] || continue; priv timeout 10 nice -n 19 du -sk \"$d\"; break; done",
     ),
     (
         "FIREWALL",
@@ -216,6 +235,15 @@ SLOW_SECTIONS = [
         " | head -n 50;"
         " echo '#EMPTY_PASSWORD'; if [ -r /etc/shadow ] || [ -n \"$S\" ]; then"
         " priv awk -F: '$2 == \"\" { print $1 }' /etc/shadow; else echo UNKNOWN; fi",
+    ),
+    (
+        "STORAGE",
+        # Inode usage, read-only remounts (disk errors), journal size; the rest needs root (see above)
+        "echo '#INODES'; df -P -i -x tmpfs -x devtmpfs -x squashfs -x efivarfs || df -P -i;"
+        " echo '#RO'; while read -r dev mnt fs opts rest; do case $fs in ext2|ext3|ext4|xfs|btrfs)"
+        " case \",$opts,\" in *,ro,*) echo \"$mnt\";; esac;; esac; done < /proc/mounts;"
+        " echo '#JOURNAL'; journalctl --disk-usage 2>/dev/null | head -n 1;"
+        " priv sh -c \"" + STORAGE_PRIV_SCRIPT.replace('"', '\\"').replace("$", "\\$") + "\"",
     ),
     ("SERVICES", "systemctl list-units --type=service --all --no-pager"),
     ("UNIT_FILES", "systemctl list-unit-files --type=service --no-pager"),
@@ -284,7 +312,7 @@ SECTION_PREFIX = "===PULSEOPS"
 
 
 # Slow sections whose content practically never changes; the collector refreshes them far less often
-RARE_SECTIONS = {"UNIT_FILES", "SYSCONF", "UPDATES", "HARDEN"}
+RARE_SECTIONS = {"UNIT_FILES", "SYSCONF", "UPDATES", "HARDEN", "STORAGE"}
 
 
 def build_script(

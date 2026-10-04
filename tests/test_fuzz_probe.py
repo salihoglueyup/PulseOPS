@@ -245,6 +245,7 @@ EXTRA_SAMPLES = {
                   '{"Type":"Build Cache","TotalCount":"40","Active":"0","Size":"12.5GB","Reclaimable":"12.5GB"}\n'),
     "CONTAINERD_SZ": "28G\t/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs\n",
     "SSHD_CONF": "#EFFECTIVE\nport 22\npermitrootlogin prohibit-password\npasswordauthentication yes\n",
+    "STORAGE": (Path(__file__).parent / "fixtures" / "storage_section.txt").read_text(),
 }
 
 
@@ -257,6 +258,7 @@ def _section_parsers():
     from pulseops.collectors.security_collector import SecurityCollector
     from pulseops.collectors.service_collector import ServiceCollector
     from pulseops.collectors.storage_collector import StorageCollector
+    from pulseops.models.storage import StorageOverview
 
     return {
         "HOST": pp.parse_host, "UPTIME": pp.parse_uptime, "LOADAVG": pp.parse_loadavg, "SYSCONF": pp.parse_sysconf,
@@ -273,6 +275,7 @@ def _section_parsers():
         "CONTAINERD_SZ": lambda s: StorageCollector().parse_docker_df("", s),
         "SSHD_CONF": SecurityCollector().parse_sshd_config_text,
         "SS": PortCollector().parse_ss_text,
+        "STORAGE": lambda s: StorageCollector().apply_storage_section(StorageOverview(), s),
     }
 
 

@@ -43,7 +43,7 @@ terminalde de tüm içeriğe ulaşılır).
 | `7` | Yedekler | systemd timer'ları, crontab yedek işleri, snapshot dosyaları, saklama riski |
 | `8` | Loglar | nginx access log veya journald akışı, renklendirme ve filtre |
 | `9` | Güvenlik | SSH sertleştirme, güvenlik duvarı, SOC görünümü (fail2ban, SSH giriş aktivitesi, yetkili hesaplar), güncellemeler, sistem sertleştirme, konteyner güvenliği |
-| `0` | Depolama | Docker disk kullanımı, BuildKit önbelleği, containerd katmanları, geri kazanılabilir alan |
+| `0` | Depolama | Dosya sistemleri (doluluk, inode, salt-okunur), dolma tahmini, en büyük dizinler, silinmiş ama açık dosyalar, log şişmesi (journald, `/var/log`, Docker konteyner logları), Docker depolama, tavsiyeler |
 
 Neyin, nasıl denetlendiği: [Neler Denetlenir?](checks.md).
 

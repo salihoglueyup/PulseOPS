@@ -1,0 +1,26 @@
+#INODES
+Filesystem       Inodes  IUsed    IFree IUse% Mounted on
+/dev/vda1      6553600 6291456   262144   96% /
+/dev/vdb1       131072    1310   129762    1% /data
+#RO
+/data
+/
+#JOURNAL
+Archived and active journals take up 2.5G in the file system.
+#SCOPE full
+#VARLOG
+3145728
+#BIGLOGS
+1073741824 /var/log/nginx/access.log
+52428800 /var/log/syslog
+#DOCKERLOGS
+2147483648 /var/lib/docker/containers/abc/abc-json.log
+#DELETED
+209715200 1234 501 nginx /var/log/nginx/access.log.1 (deleted)
+209715200 1234 502 nginx /var/log/nginx/access.log.1 (deleted)
+4096 99 7 sd-pam /memfd:sd-systemd (deleted)
+#TOPDIRS
+107374182	/
+64424509	/var
+32212254	/home
+RC 124

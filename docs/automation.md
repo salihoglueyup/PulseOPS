@@ -60,7 +60,10 @@ dosya + rename; yarım dosya asla okunmaz):
 | `pulseops_ssh_failed_logins` | | başarısız SSH girişleri |
 | `pulseops_firewall_active`, `pulseops_exposed_risky_ports` | | güvenlik duvarı, dışa açık riskli portlar |
 | `pulseops_cpu_percent`, `pulseops_memory_percent` | | kaynak kullanımı |
-| `pulseops_disk_used_percent` | mountpoint | disk doluluğu |
+| `pulseops_disk_used_percent`, `pulseops_inode_used_percent` | mountpoint | disk ve inode doluluğu |
+| `pulseops_disk_full_forecast_days` | | kök diskin dolmasına kalan tahmini gün |
+| `pulseops_readonly_system_mounts` | | salt-okunur bağlanmış sistem dosya sistemleri |
+| `pulseops_deleted_open_bytes`, `pulseops_docker_log_bytes`, `pulseops_journal_bytes` | | alan tutan dosyalar |
 | `pulseops_last_check_timestamp_seconds` | | son kontrol zamanı |
 
 Okunamayan değerler 0 olarak değil, **hiç yazılmaz**.

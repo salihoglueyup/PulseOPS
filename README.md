@@ -45,8 +45,10 @@ ekranda. Sunucuya **hiçbir ajan veya servis kurulmaz**, **hiçbir şey değişt
   sertleştirme, konteyner kaçış riskleri (`--privileged`, Docker soketi, tehlikeli yetenekler).
 - **Değişiklik tespiti:** yeni dışa açık port, UID 0 hesap, SSH anahtarı, SUID dosya, kapatılan güvenlik duvarı…
   geçmişe kaydedilir, bir kez bildirilir.
+- **Depolama:** inode tükenmesi, hata nedeniyle salt-okunur kalan diskler, "bu hızla N günde dolacak" tahmini,
+  silinmiş ama açık tutulan dosyalar, log şişmesi (journald, Docker konteyner logları), en büyük dizinler.
 - **Web & altyapı:** nginx/Docker yönlendirme haritası, SSL kalan gün, 502 teşhisi, veritabanı keşfi, systemd,
-  yedekler, Docker/BuildKit depolama analizi.
+  yedekler, Docker/BuildKit depolama.
 - **Otomasyon:** Nagios uyumlu `check`, JSON ve Prometheus çıktısı, systemd zamanlayıcısı, Telegram / Slack /
   Discord / e-posta / webhook bildirimleri, çoklu sunucu (filo).
 - **Yerel AI (Ollama):** sunucunun durumunu yerel bir modelle yorumlatın; veri makineden çıkmaz, prompt

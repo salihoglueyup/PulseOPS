@@ -77,6 +77,10 @@
 # ssl_days = 7
 # Bu sayının üzerinde başarısız SSH denemesi ve fail2ban koruması yoksa uyar
 # ssh_failed_logins = 100
+# Inode kullanım uyarı eşiği (%)
+# inode_percent = 90.0
+# Kök diskin bu kadar gün içinde dolacağı tahmin edilirse uyar
+# disk_full_days = 7.0
 
 [ai]
 # Ollama adresi

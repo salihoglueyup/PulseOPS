@@ -1,5 +1,6 @@
 from typing import Optional
 
+from pulseops.models.storage import human_bytes
 from pulseops.models.telemetry import Telemetry
 from pulseops.config import AlertConfig
 from pulseops.models.ports import PortExposure
@@ -63,6 +64,18 @@ def summarize_alerts(t: Telemetry, thresholds: Optional[AlertConfig] = None) -> 
             alerts.append(f"Konteyner {c.name} sağlıksız (healthcheck)")
         if c.security.restart_count >= 5:
             alerts.append(f"Konteyner {c.name} {c.security.restart_count} kez yeniden başladı")
+    st = t.storage
+    for mount in st.critical_read_only:
+        alerts.append(f"{mount} salt-okunur bağlanmış (dosya sistemi hatası?)")
+    for mount, pct in st.inode_percent.items():
+        if pct >= th.inode_percent:
+            alerts.append(f"{mount} inode %{pct:.0f}")
+    if st.forecast_days is not None and st.forecast_days <= th.disk_full_days:
+        alerts.append(f"Kök disk ~{st.forecast_days:.0f} gün içinde dolacak")
+    if st.deleted_open_bytes >= 1024**3:
+        alerts.append(f"Silinmiş ama açık dosyalar {human_bytes(st.deleted_open_bytes)} tutuyor")
+    if st.docker_log_bytes >= 1024**3:
+        alerts.append(f"Docker konteyner logları {human_bytes(st.docker_log_bytes)}")
     if t.storage.is_cache_bloated:
         alerts.append("BuildKit önbelleği >10GB")
     return alerts

@@ -63,6 +63,19 @@ def prometheus_text(results) -> str:
         m.add("pulseops_memory_percent", "Memory usage", round(t.snapshot.memory.percent, 2), **base)
         for d in t.snapshot.disks:
             m.add("pulseops_disk_used_percent", "Filesystem usage", round(d.percent, 2), mountpoint=d.mountpoint, **base)
+        st = t.storage
+        for mount, pct in st.inode_percent.items():
+            m.add("pulseops_inode_used_percent", "Filesystem inode usage", pct, mountpoint=mount, **base)
+        if st.known:
+            m.add("pulseops_readonly_system_mounts", "System filesystems remounted read-only",
+                  len(st.critical_read_only), **base)
+            if st.complete:
+                m.add("pulseops_deleted_open_bytes", "Space held by deleted but still open files",
+                      st.deleted_open_bytes, **base)
+            m.add("pulseops_docker_log_bytes", "Size of large container log files", st.docker_log_bytes, **base)
+            m.add("pulseops_journal_bytes", "journald disk usage", st.journal_bytes, **base)
+        m.add("pulseops_disk_full_forecast_days", "Days until the root filesystem is full at the current rate",
+              None if st.forecast_days is None else round(st.forecast_days, 1), **base)
         if sec.updates.known:
             m.add("pulseops_pending_updates", "Pending package updates", sec.updates.total, **base)
             m.add("pulseops_security_updates", "Pending security updates", sec.updates.security, **base)

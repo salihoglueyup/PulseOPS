@@ -16,7 +16,7 @@ from pulseops.collectors.privilege_collector import parse_privileges_section
 from pulseops.collectors.probe import RARE_SECTIONS, build_script, parse_sections
 from pulseops.collectors.security_collector import SecurityCollector
 from pulseops.collectors.service_collector import CRITICAL_SERVICES, ServiceCollector
-from pulseops.collectors.storage_collector import StorageCollector
+from pulseops.collectors.storage_collector import StorageCollector, storage_recommendations
 from pulseops.collectors.transport import TransportError
 from pulseops.collectors import probe_parsers as pp
 from pulseops.models.backup import BackupData
@@ -33,6 +33,9 @@ MAX_TOP_PROCESSES = 20
 MAX_LOG_LINES = 40
 MAX_OTHER_SERVICES = 25
 RARE_REFRESH_SECONDS = 600
+# Expensive rare sections (package simulation, du of the root filesystem) left out of the first
+# interactive poll so the screen fills at once; they arrive one slow tick later
+DEFERRED_SECTIONS = frozenset({"UPDATES", "STORAGE"})
 
 
 class ProbeCollector(BaseCollector):
@@ -44,8 +47,7 @@ class ProbeCollector(BaseCollector):
         self._sudo: Optional[bool] = None if use_sudo else False
         self.fast_timeout = fast_timeout
         self.slow_timeout = slow_timeout
-        # Interactive views set this: the package manager check (seconds of CPU with apt) is then
-        # left out of the very first poll so the screen fills at once; it arrives a slow tick later
+        # Interactive views set this: DEFERRED_SECTIONS are left out of the very first poll
         self.defer_updates = False
 
         self._ports_parser = PortCollector()
@@ -100,7 +102,7 @@ class ProbeCollector(BaseCollector):
         rare_fresh = self._rare_sections and time.time() - self._rare_collected_at < RARE_REFRESH_SECONDS
         skip = frozenset(RARE_SECTIONS) if rare_fresh else frozenset()
         if self.defer_updates and need_slow and not self._slow_sections:
-            skip |= {"UPDATES"}
+            skip |= DEFERRED_SECTIONS
         script, nonce = build_script(
             fast=True, slow=need_slow, logs=include_logs, baseline=need_baseline, sudo=self._sudo, skip=skip,
         )
@@ -133,6 +135,7 @@ class ProbeCollector(BaseCollector):
         if snapshot.disks:
             root = snapshot.disks[0]
             storage.root_used_gb, storage.root_total_gb, storage.root_percent = root.used_gb, root.total_gb, root.percent
+        storage.recommendations = storage_recommendations(storage, snapshot.disks)
 
         return Telemetry(
             snapshot=snapshot,
@@ -291,6 +294,7 @@ class ProbeCollector(BaseCollector):
         self._routes_base = self._nginx.parse_config_text(s.get("NGINX", ""))
         self._containers = self._parse_containers(s.get("DOCKER", ""))
         security = pp.parse_docker_security(s.get("DOCKER_SEC", ""))
+        names_by_id = {c.id: c.name for c in self._containers if c.id}
         for c in self._containers:
             c.security = security.get(c.name)
 
@@ -313,7 +317,13 @@ class ProbeCollector(BaseCollector):
             retention=self._backup.audit_retention(snapshots),
         )
 
-        self._storage_base = self._storage.parse_docker_df(s.get("DOCKER_DF", "").strip(), s.get("CONTAINERD_SZ", "").strip())
+        storage = self._storage.parse_docker_df(s.get("DOCKER_DF", "").strip(), s.get("CONTAINERD_SZ", "").strip())
+        self._storage_base = self._storage.apply_storage_section(storage, s.get("STORAGE", ""))
+        for log in self._storage_base.docker_logs:
+            # /var/lib/docker/containers/<id>/<id>-json.log -> container name
+            container_id = log.path.rstrip("/").split("/")[-2][:12] if log.path.count("/") >= 2 else ""
+            if container_id in names_by_id:
+                log.path = f"{names_by_id[container_id]} ({container_id})"
         self._firewall = pp.parse_firewall(s.get("FIREWALL", ""))
         sshd = s.get("SSHD_CONF", "").strip()
         if sshd == "UNREADABLE":

@@ -101,6 +101,10 @@ def test_probe_on_distro(container, user):
     # Package manager detected; a bare image has no package index, which must read as unknown, not "0"
     family = {"alpine": "apk", "ubuntu": "apt", "debian": "apt", "almalinux": "dnf"}[image.split(":")[0]]
     assert first.security.updates.manager == family, (image, first.security.updates)
+    st = first.storage
+    assert st.known and "/" in st.inode_percent, (image, user, st)
+    assert st.complete == (user != "nobody"), (image, user, st.complete)
+    assert st.top_dirs, (image, user, st.top_dirs)
     hard = first.security.hardening
     assert hard.known and any(c.id.startswith("perm:") for c in hard.checks), (image, hard)
     assert (hard.suspicious_suid is not None) == (user != "nobody"), (image, user, hard.suspicious_suid)

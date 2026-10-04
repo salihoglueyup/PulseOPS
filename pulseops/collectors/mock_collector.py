@@ -435,28 +435,32 @@ class MockCollector:
         )
 
     def get_storage(self):
-        from pulseops.models.storage import StorageOverview, StorageItem, ContainerdSnapshotGroup
-        return StorageOverview(
-            root_used_gb=31.0,
-            root_total_gb=193.0,
-            root_percent=17.0,
-            containerd_overlayfs_human="6.7 GB",
-            buildkit_cache_human="0 B",
-            total_reclaimable_human="2.1 GB",
+        from pulseops.collectors.storage_collector import storage_recommendations
+        from pulseops.models.storage import DeletedOpenFile, FileUsage, StorageItem, StorageOverview
+
+        gb, mb = 1024**3, 1024**2
+        st = StorageOverview(
+            root_used_gb=68.3 * 193 / 100, root_total_gb=193.0, root_percent=68.3,
             items=[
-                StorageItem(name="Images", total_human="8.4 GB", reclaimable_human="2.1 GB (25%)", is_critical=False, details="Toplam: 14 | Aktif: 5"),
-                StorageItem(name="Containers", total_human="74.2 MB", reclaimable_human="0 B (0%)", is_critical=False, details="Toplam: 5 | Aktif: 5"),
-                StorageItem(name="Local Volumes", total_human="1.2 GB", reclaimable_human="0 B (0%)", is_critical=False, details="Toplam: 3 | Aktif: 3"),
-                StorageItem(name="Build Cache", total_human="0 B", reclaimable_human="0 B (0%)", is_critical=False, details="BuildKit GC temiz"),
-                StorageItem(name="Containerd OverlayFS", total_human="6.7 GB", reclaimable_human="0 B", is_critical=False, details="Aktif container katmanları"),
+                StorageItem(name="Images", total_bytes=int(8.4 * gb), reclaimable_bytes=int(2.1 * gb),
+                            reclaimable_percent=25, count=14, active=5),
+                StorageItem(name="Containers", total_bytes=int(74 * mb), count=5, active=5),
+                StorageItem(name="Local Volumes", total_bytes=int(1.2 * gb), count=3, active=3),
+                StorageItem(name="Build Cache", total_bytes=int(3.1 * gb), reclaimable_bytes=int(3.1 * gb),
+                            reclaimable_percent=100, count=41, active=0),
             ],
-            snapshot_groups=[
-                ContainerdSnapshotGroup(count=5, size_human="Aktif Container Katmanları", inodes=34200, state="Active / Running", note="docker-web, redis, postgres, n8n"),
-            ],
-            recommendations=[
-                "✓ BuildKit önbelleği temizlendi (0 B). Disk kullanımı sağlıklı (%17).",
-                "ℹ️ Koruma: /etc/docker/daemon.json içine 'builder.gc.defaultKeepStorage: 10GB' tanımlayarak şişmeyi önleyin.",
-                "ℹ️ Güvenli Prune: 'docker builder prune -f --keep-storage 10GB' komutunu haftalık çalıştırabilirsiniz.",
-            ],
-            is_cache_bloated=False,
+            buildkit_cache_bytes=int(3.1 * gb), containerd_bytes=int(9.6 * gb),
+            known=True, complete=True,
+            inode_percent={"/": 41.0, "/mnt/storage": 3.0},
+            journal_bytes=int(1.4 * gb), var_log_bytes=int(2.3 * gb),
+            big_logs=[FileUsage(path="/var/log/nginx/access.log", bytes=int(740 * mb)),
+                      FileUsage(path="/var/log/syslog.1", bytes=int(210 * mb))],
+            docker_logs=[FileUsage(path="wordpress-prod (3f2a91c0d4e1)", bytes=int(870 * mb))],
+            deleted_open=[DeletedOpenFile(pid=1123, process="nginx", path="/var/log/nginx/access.log.1",
+                                          bytes=int(480 * mb))],
+            top_dirs=[FileUsage(path=p, bytes=int(v * gb)) for p, v in
+                      (("/var", 61.2), ("/home", 28.4), ("/usr", 9.8), ("/opt", 7.1), ("/srv", 4.3), ("/root", 1.2))],
+            forecast_days=46.0, growth_percent_per_day=0.69,
         )
+        st.recommendations = storage_recommendations(st, [])
+        return st

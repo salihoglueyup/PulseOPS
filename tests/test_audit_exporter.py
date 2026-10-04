@@ -44,7 +44,6 @@ def test_calculate_audit_score_clean():
     )
     storage = StorageOverview(
         is_cache_bloated=False,
-        total_reclaimable_human="1.2 GB",
         items=[],
     )
     
@@ -62,7 +61,7 @@ def test_generate_audit_markdown_comprehensive():
     )
     storage = StorageOverview(
         is_cache_bloated=True,
-        total_reclaimable_human="28.5 GB",
+        buildkit_cache_bytes=int(28.5 * 1024**3),
     )
 
     md_text = generate_audit_markdown(
@@ -86,7 +85,7 @@ def test_generate_audit_markdown_comprehensive():
     assert "3. 🔍 DİNLENEN PORTLAR VE GÜVENLİK ANALİZİ" in md_text
     assert "7. 💾 YEDEKLEME SİSTEMİ DURUMU" in md_text
     assert "8. 🐳 DOCKER KONTEYNERLERİ" in md_text
-    assert "9. 📦 DEPOLAMA, BUILDKIT & CONTAINERD ANALİZİ" in md_text
+    assert "9. 📦 DEPOLAMA" in md_text
     assert "10. 🧠 EN ÇOK KAYNAK TÜKETEN İLK 5 SÜREÇ" in md_text
     assert "YÖNETİCİ EYLEM PLANI (ACTION CHECKLIST)" in md_text
 

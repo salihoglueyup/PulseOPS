@@ -276,6 +276,21 @@ def _record_history(store, t: Telemetry, config: Config) -> list:
         return []
 
 
+def _with_forecast(store, t: Telemetry) -> Telemetry:
+    """Adds the root disk fill forecast from the local history (no-op without history)."""
+    if store is None:
+        return t
+    import time
+    from pulseops.collectors.storage_collector import apply_forecast
+    from pulseops.history import host_key
+    try:
+        samples = store.samples(host_key(t), time.time() - 7 * 86400)
+    except Exception:
+        get_logger("history").exception("Geçmiş okunamadı")
+        return t
+    return t.model_copy(update={"storage": apply_forecast(t.storage, samples, t.snapshot.disks)})
+
+
 def _recent_changes(store, t: Telemetry, hours: int = 24) -> list:
     if store is None:
         return []
@@ -292,6 +307,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     t = _collect_or_exit(build_collector(args))
     store = _history_store(args)
     _record_history(store, t, _config(args))
+    t = _with_forecast(store, t)
     recent = _recent_changes(store, t)
     if args.json:
         data = _telemetry_json(t, _config(args))
@@ -502,13 +518,14 @@ def _emit_check(args: argparse.Namespace, results: list[CheckResult], fleet: boo
 
 def _check_telemetry(args: argparse.Namespace, t: Telemetry) -> CheckResult:
     config = _config(args)
+    # Security drift since the previous `check` (whoever detected it: TUI, status or check)
+    store = _history_store(args)
+    _record_history(store, t, config)
+    t = _with_forecast(store, t)
     score, grade = _score(t)
     alerts = summarize_alerts(t, config.alerts)
     code = evaluate_check(score, args.warn, args.crit)
 
-    # Security drift since the previous `check` (whoever detected it: TUI, status or check)
-    store = _history_store(args)
-    _record_history(store, t, config)
     unreported = []
     if store is not None:
         from pulseops.history import host_key

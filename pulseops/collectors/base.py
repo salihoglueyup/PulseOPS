@@ -161,7 +161,8 @@ class LocalLiveCollector(BaseCollector):
         return self.security.collect_local(ports)
 
     def poll_storage(self):
-        return self.storage.collect_local()
+        from pulseops.collectors.storage_collector import collect_local_storage
+        return collect_local_storage()
 
     def poll_privileges(self):
         from pulseops.collectors.privilege_collector import collect_local_privileges

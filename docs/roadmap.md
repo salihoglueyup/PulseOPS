@@ -202,3 +202,9 @@ Bu fazda bulunan ve düzeltilen hatalar:
 - ✅ Uzun fuzzing ve her ayrıştırıcı değeri için kapsamlı düşmanca değer testi; bulunan çökmeler: Unicode
   rakamlar (`"²".isdigit()`), `nan`/`inf` sayılar, taşan zaman damgası, bozuk fail2ban çıktısı, `=` içeren
   kullanıcı adı
+- ✅ Depolama sekmesi yeniden yazıldı: sahte/sabit veriler (uydurma snapshot katmanları, sabit "6.7 GB",
+  Windows/Docker Desktop metinleri) kaldırıldı. Yeni: dosya sistemleri tablosu (doluluk, inode, salt-okunur),
+  geçmişten dolma tahmini, en büyük dizinler, silinmiş ama açık dosyalar, log şişmesi (journald, `/var/log`,
+  Docker konteyner logları), Docker 29 containerd imaj deposu; uyarılar, skor, rapor, Prometheus ve AI bağlamı.
+  Gerçek senaryolarla doğrulandı (açık tutulan silinmiş 200 MB dosya, 80 MB log, konuşkan konteyner)
+

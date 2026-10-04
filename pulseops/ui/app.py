@@ -49,6 +49,7 @@ THEMES = [
 ]
 
 from pulseops.ui.ascii_filter import AsciiFilter
+from pulseops.collectors.storage_collector import disk_forecast, storage_recommendations
 
 _CSS_FILE = Path(__file__).parent / "styles.tcss"
 
@@ -115,6 +116,7 @@ class ServerTUIApp(App):
         # Optional HistoryStore: per-minute samples + drift detection on every slow poll
         self.history = history
         self._last_sample_at = 0.0
+        self._disk_forecast: tuple = (None, None)
         self._announced_offline_changes = False
         self.collector = collector
         self.poll_interval = poll_interval
@@ -426,6 +428,8 @@ class ServerTUIApp(App):
             if include_slow:
                 changes = self.history.detect_changes(t)
                 self.history.take_unreported(host_key(t), "tui")  # what we show live is not "offline"
+                # Root disk fill forecast from the last 7 days of samples (refreshed with the slow tier)
+                self._disk_forecast = disk_forecast(self.history.samples(host_key(t), time.time() - 7 * 86400))
             if t.collected_at - self._last_sample_at >= 60:
                 score, _ = calculate_audit_score(t.snapshot, t.ports, t.routes, security=t.security, storage=t.storage,
                                         containers=t.containers)
@@ -433,6 +437,10 @@ class ServerTUIApp(App):
                 self._last_sample_at = t.collected_at
         except Exception:
             log.exception("Geçmiş kaydedilemedi")
+        if self._disk_forecast != (None, None):
+            t.storage = t.storage.model_copy()
+            t.storage.forecast_days, t.storage.growth_percent_per_day = self._disk_forecast
+            t.storage.recommendations = storage_recommendations(t.storage, t.snapshot.disks)
         return changes, offline
 
     def _on_poll_done(self, telemetry: Telemetry, include_slow: bool, changes=(), offline=()) -> None:
@@ -514,6 +522,7 @@ class ServerTUIApp(App):
         self.database_panel.databases = t.databases
         self.security_panel.containers = t.containers
         self.security_panel.security = t.security
+        self.storage_panel.disks = t.snapshot.disks
         self.storage_panel.storage = t.storage
         if t.logs:
             self.log_viewer.logs = t.logs

@@ -45,7 +45,7 @@ PULSEOPS_FUZZ_EXAMPLES=5000 pytest tests/test_fuzz_probe.py
   rapor `_md()` kaçışlaması kullanır. Sayıları `isdecimal()` ve sonlu kontrolüyle ayrıştırın.
 - Yeni bir ayar eklediğinizde `docs/configuration.md` (`pulseops config` çıktısı) ve paketlerle dağıtılan
   `packaging/config.example.toml` (`pulseops config --init` şablonu) dosyalarını yenileyin; testler ikisinin de
-  koddan sapmadığını kontrol eder.
+  koddan sapmadığını kontrol eder; ikisini birden `python scripts/update_config_docs.py` yeniler.
 
 ## Yayın süreci
 

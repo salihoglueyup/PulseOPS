@@ -215,6 +215,18 @@ def build_context(t: Telemetry, changes: Optional[list] = None, cfg: Optional[AI
              "restarts": c.security.restart_count if c.security else None}
             for c in t.containers[:30]
         ],
+        "storage": {
+            "inode_percent": t.storage.inode_percent or None,
+            "read_only_system_mounts": t.storage.critical_read_only if t.storage.known else None,
+            "disk_full_in_days": None if t.storage.forecast_days is None else round(t.storage.forecast_days, 1),
+            "growth_percent_per_day": t.storage.growth_percent_per_day,
+            "deleted_open_files": [{"process": f.process, "pid": f.pid, "path": f.path, "mb": round(f.bytes / 2**20)}
+                                   for f in t.storage.deleted_open[:5]] if t.storage.complete else None,
+            "largest_dirs_mb": {d.path: round(d.bytes / 2**20) for d in t.storage.top_dirs[:8]} or None,
+            "journal_mb": None if t.storage.journal_bytes is None else round(t.storage.journal_bytes / 2**20),
+            "docker_logs_mb": {f.path: round(f.bytes / 2**20) for f in t.storage.docker_logs[:5]} or None,
+            "docker_reclaimable_mb": round(t.storage.docker_reclaimable_bytes / 2**20),
+        },
         "failed_services": [sv.name for sv in t.services if sv.state == ServiceState.FAILED],
         "recent_security_changes": [
             {"severity": c.severity, "category": c.category, "message": c.message} for c in (changes or [])[:40]

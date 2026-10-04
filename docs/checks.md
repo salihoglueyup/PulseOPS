@@ -23,6 +23,11 @@ TUI'de `a`, `pulseops status`, `check` ve bildirimlerde görünür. Eşikler `[a
 | Yeniden başlatma gerekli | `reboot-required`, `needs-restarting`, veya kurulu daha yeni çekirdek |
 | Sertleştirme | Her başarısız YÜKSEK önemli kontrol (aşağıda) |
 | Riskli konteyner | YÜKSEK önemli konteyner riski; sağlıksız veya ≥5 kez yeniden başlamış konteyner |
+| Salt-okunur dosya sistemi | `/`, `/var`, `/home`, `/srv`, `/tmp`, `/opt`… hata nedeniyle salt-okunur bağlanmış |
+| Inode | Bir dosya sisteminin inode kullanımı `inode_percent` (90) üstünde |
+| Disk dolacak | Geçmişe göre kök disk `disk_full_days` (7) gün içinde dolacak |
+| Silinmiş-açık dosyalar | Silinmiş ama süreçlerce açık tutulan dosyalar 1 GB'ı aştı |
+| Docker logları | Büyük konteyner log dosyaları toplamı 1 GB'ı aştı |
 | BuildKit önbelleği | 10 GB'ı aştı |
 
 ## Sağlık skoru
@@ -43,6 +48,9 @@ TUI'de `a`, `pulseops status`, `check` ve bildirimlerde görünür. Eşikler `[a
 | Host'u ele geçirebilecek konteyner | −10 her biri (en çok −30) |
 | 502/504 veren site | −10 her biri |
 | 7 gün içinde biten SSL | −10 her biri |
+| Salt-okunur bağlanmış sistem dosya sistemi | −20 |
+| Inode kullanımı ≥ %90 | −10 |
+| Kök disk 7 gün içinde dolacak | −10 |
 | BuildKit önbelleği > 10 GB | −15 |
 | Bir disk > %85 | −10 |
 
@@ -101,6 +109,24 @@ Sistem bin dizinlerindeki SUID/SGID dosyaların listesi de tutulur: yeni bir SUI
 | DÜŞÜK | root kullanıcısıyla çalışıyor |
 
 Ayrıca healthcheck durumu ve yeniden başlama sayısı (≥5: çökme döngüsü uyarısı).
+
+## Depolama
+
+Disk doluluğunun ötesinde, sunucuları gerçekte durduran depolama sorunları (10 dakikada bir, düşük öncelikle):
+
+| Kontrol | Nasıl | Neden önemli |
+| :--- | :--- | :--- |
+| Inode kullanımı | `df -i` | Disk boş görünse de inode bitince yeni dosya oluşturulamaz (oturum dosyaları, kuyruklar) |
+| Salt-okunur bağlama | `/proc/mounts` (ext*/xfs/btrfs) | Disk hatasında çekirdek dosya sistemini salt-okunur yapar; servisler sessizce yazamaz. Kasıtlı salt-okunur imaj bağlamaları uyarı üretmez |
+| Dolma tahmini | geçmişteki kök disk örneklerine doğrusal eğilim (son 7 gün, ≥ 6 saat, ≥ 12 örnek) | "Bu hızla N gün içinde dolacak" |
+| Silinmiş ama açık dosyalar | `/proc/*/fd` (silinmiş hedefler), süreç adı ve boyutu; aynı inode bir kez sayılır | Klasik "df dolu ama du bulamıyor": log döndürüldü ama süreç eski dosyayı tutuyor. Alan, süreç yeniden başlayınca boşalır |
+| Log şişmesi | `/var/log` boyutu, en büyük log dosyaları, `journalctl --disk-usage`, Docker konteyner logları (`*-json.log`, konteyner adıyla) | Varsayılan Docker log sürücüsünün sınırı yoktur |
+| En büyük dizinler | kök dosya sisteminde `du -x -d 1`, `nice` + boşta I/O önceliği, 25 sn sınırı (aşılırsa kısmi sonuç işaretlenir) | Neyin yer kapladığını görmek |
+| Docker | `docker system df`, imaj deposunun diskteki boyutu (Docker 29 containerd deposu dahil) | Geri kazanılabilir alan, BuildKit önbelleği |
+
+Root olmadan diğer kullanıcıların dosyaları ve süreçleri görülemez; bu durumda panel bunu belirtir. Tavsiyeler
+yalnızca ölçülen değerlerden üretilir (ör. `journalctl --vacuum-size`, Docker `log-opts`, sürecin yeniden
+başlatılması).
 
 ## Değişiklik tespiti
 

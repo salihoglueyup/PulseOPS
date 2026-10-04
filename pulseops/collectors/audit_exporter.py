@@ -9,7 +9,7 @@ from pulseops.models.docker import ContainerSummary
 from pulseops.models.database import DatabaseInstance
 from pulseops.models.services import ServiceUnit, ServiceState
 from pulseops.models.security import SecurityOverview
-from pulseops.models.storage import StorageOverview
+from pulseops.models.storage import StorageOverview, human_bytes
 
 def _md(value) -> str:
     """Telemetry text inside Markdown tables/code spans: neutralize table and code delimiters."""
@@ -141,6 +141,15 @@ def calculate_audit_score(
     # Bloated BuildKit cache (-15)
     if storage and storage.is_cache_bloated:
         score -= 15
+
+    # Read-only remounted system filesystem (-20), inode exhaustion (-10), disk full within a week (-10)
+    if storage:
+        if storage.critical_read_only:
+            score -= 20
+        if any(pct >= 90 for pct in storage.inode_percent.values()):
+            score -= 10
+        if storage.forecast_days is not None and storage.forecast_days <= 7:
+            score -= 10
 
     # Root Disk > 85% (-10)
     if any(d.percent > 85.0 for d in snapshot.disks):
@@ -326,24 +335,40 @@ def generate_audit_markdown(
                 sec_text = "; ".join(risks) or "✓"
             md.append(f"| **{_md(c.name)}** | `{_md(c.image)}` | {_md(c.status)} | `{_md(ports_joined)}` | {_md(sec_text)} |")
 
-    # 9. Storage & BuildKit Analyzer
+    # 9. Storage
     if storage:
+        forecast = ("yeterli geçmiş yok" if storage.forecast_days is None and storage.growth_percent_per_day is None
+                    else "büyümüyor" if storage.forecast_days is None
+                    else f"~{storage.forecast_days:.0f} gün (+%{storage.growth_percent_per_day:.2f}/gün)")
         md.extend([
             "",
             "---",
             "",
-            "## 9. 📦 DEPOLAMA, BUILDKIT & CONTAINERD ANALİZİ",
-            f"* **Kök Disk (Root):** {storage.root_used_gb:.1f} GB / {storage.root_total_gb:.1f} GB (%{storage.root_percent:.1f} Doluluk)",
-            f"* **BuildKit Cache:** `{storage.buildkit_cache_human}` — {'🚨 AŞIRI BİRİKME TESPİT EDİLDİ!' if storage.is_cache_bloated else 'Normal ✓'}",
-            f"* **Containerd OverlayFS:** `{storage.containerd_overlayfs_human}`",
-            f"* **Kurtarılabilir Alan (Reclaimable):** `{storage.total_reclaimable_human}`",
-            "",
-            "| Depolama Türü | Toplam Boyut | Kurtarılabilir Alan | Durum / Detay |",
-            "| :--- | :--- | :--- | :--- |",
+            "## 9. 📦 DEPOLAMA",
+            f"* **Kök disk:** {storage.root_used_gb:.1f} GB / {storage.root_total_gb:.1f} GB (%{storage.root_percent:.1f})"
+            + (f", inode %{storage.inode_percent['/']:.0f}" if "/" in storage.inode_percent else ""),
+            f"* **Dolma tahmini:** {forecast}",
+            f"* **Geri kazanılabilir:** Docker `{human_bytes(storage.docker_reclaimable_bytes)}`, silinmiş-açık dosyalar "
+            f"`{human_bytes(storage.deleted_open_bytes)}`",
+            f"* **Loglar:** /var/log `{human_bytes(storage.var_log_bytes)}`, journald `{human_bytes(storage.journal_bytes)}`, "
+            f"Docker konteyner logları `{human_bytes(storage.docker_log_bytes)}`",
+            f"* **BuildKit önbelleği:** `{storage.buildkit_cache_human}`"
+            + (" — 🚨 10 GB'ı aştı" if storage.is_cache_bloated else ""),
         ])
-        for it in storage.items:
-            crit = "⚠️ ŞİŞMİŞ" if it.is_critical else "Normal"
-            md.append(f"| `{it.name}` | {it.total_human} | {it.reclaimable_human} | {it.details or crit} |")
+        if storage.critical_read_only:
+            md.append(f"* **🚨 Salt-okunur sistem dosya sistemi:** {', '.join(f'`{_md(m)}`' for m in storage.critical_read_only)}")
+        if storage.top_dirs:
+            md += ["", "| En büyük dizinler | Boyut |", "| :--- | ---: |"]
+            md += [f"| `{_md(d.path)}` | {human_bytes(d.bytes)} |" for d in storage.top_dirs[:10]]
+        if storage.deleted_open:
+            md += ["", "| Silinmiş ama açık dosya | Süreç | Boyut |", "| :--- | :--- | ---: |"]
+            md += [f"| `{_md(f.path)}` | {_md(f.process)} (pid {f.pid}) | {human_bytes(f.bytes)} |"
+                   for f in storage.deleted_open[:10]]
+        if storage.items:
+            md += ["", "| Docker | Boyut | Geri kazanılabilir | Aktif / toplam |", "| :--- | ---: | ---: | :--- |"]
+            md += [f"| `{_md(it.name)}` | {it.total_human} | {it.reclaimable_human} | {it.details} |" for it in storage.items]
+        if storage.recommendations:
+            md += [""] + [f"* {_md(r)}" for r in storage.recommendations]
 
     # 10. Top Processes
     md.extend([
