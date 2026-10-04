@@ -294,3 +294,9 @@ def test_hardening_alerts_score_and_drift():
     assert (HIGH, "Şüpheli konumda SUID/SGID dosya: /tmp/.x/bash") in changes
     assert (HIGH, "Parolası boşaltılan hesap: guest") in changes
     assert (HIGH, "Dosya izni bozuldu: /etc/shadow herkes tarafından okunabiliyor") in changes
+
+
+def test_fail2ban_empty_jail_header():
+    # Found by the fuzzer: "#JAIL " at the very end had no name line
+    status = pp.parse_fail2ban("INSTALLED\nRUNNING\nStatus\n`- Jail list:\tsshd\n#JAIL ")
+    assert status.known and status.jails == []

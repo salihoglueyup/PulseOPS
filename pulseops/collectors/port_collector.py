@@ -101,7 +101,7 @@ def is_lan_ip(clean_ip: str) -> bool:
         return True
     if clean_ip.startswith("172."):
         parts = clean_ip.split(".")
-        if len(parts) >= 2 and parts[1].isdigit():
+        if len(parts) >= 2 and parts[1].isdecimal():
             second_octet = int(parts[1])
             if 16 <= second_octet <= 31:
                 return True
@@ -330,9 +330,9 @@ class PortCollector:
                     local_addr = parts[1]
                     if ":" in local_addr:
                         ip_part, port_str = local_addr.rsplit(":", 1)
-                        if port_str.isdigit():
+                        if port_str.isdecimal():
                             port = int(port_str)
-                            pid = int(parts[-1]) if parts[-1].isdigit() else None
+                            pid = int(parts[-1]) if parts[-1].isdecimal() else None
                             proc_name = None
                             if pid:
                                 try:

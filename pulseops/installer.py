@@ -55,7 +55,7 @@ def parse_version(tag: str) -> tuple[int, ...]:
     for chunk in tag.strip().lstrip("vV").split("."):
         digits = ""
         for c in chunk:
-            if not c.isdigit():
+            if not c.isdecimal():
                 break
             digits += c
         if not digits:

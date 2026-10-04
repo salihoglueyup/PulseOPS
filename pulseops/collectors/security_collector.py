@@ -31,7 +31,7 @@ class SecurityCollector:
                 values[key] = parts[1].strip().strip('"').lower()
 
         port_value = values.get("port", "22")
-        port = int(port_value) if port_value.isdigit() else 22
+        port = int(port_value) if port_value.isdecimal() else 22
         root_login = values.get("permitrootlogin", "prohibit-password")
         if root_login == "without-password":  # deprecated alias, and what `sshd -T` prints
             root_login = "prohibit-password"

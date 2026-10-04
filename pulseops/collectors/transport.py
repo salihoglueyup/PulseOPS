@@ -72,11 +72,11 @@ def parse_destination(spec: str) -> tuple[Optional[str], str, Optional[int]]:
     port = None
     if spec.startswith("["):
         host, _, rest = spec[1:].partition("]")
-        if rest.startswith(":") and rest[1:].isdigit():
+        if rest.startswith(":") and rest[1:].isdecimal():
             port = int(rest[1:])
     elif spec.count(":") == 1:
         host, _, port_str = spec.partition(":")
-        if port_str.isdigit():
+        if port_str.isdecimal():
             port = int(port_str)
         else:
             host = spec
@@ -109,7 +109,7 @@ def resolve_target(
     return SSHTarget(
         alias=alias,
         hostname=entry.get("hostname", alias),
-        port=port or dest_port or (int(cfg_port) if cfg_port and str(cfg_port).isdigit() else 22),
+        port=port or dest_port or (int(cfg_port) if cfg_port and str(cfg_port).isdecimal() else 22),
         username=username or dest_user or entry.get("user") or "root",
         key_filenames=keys,
         proxy_jump=jump,

@@ -35,7 +35,7 @@ def collect_local_privileges() -> PrivilegeInfo:
 def parse_privileges_section(text: str) -> PrivilegeInfo:
     """Parses the PRIV probe section. The probe falls back to `sudo -n`, so passwordless sudo counts as elevated."""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if len(lines) < 2 or not lines[1].isdigit():
+    if len(lines) < 2 or not lines[1].isdecimal():
         # Unknown (old probe or failed command): assume full access rather than showing false warnings
         return PrivilegeInfo()
     user, uid = lines[0], int(lines[1])

@@ -1,6 +1,7 @@
 """Pure parsers for probe sections. No I/O, no state: everything stateful lives in ProbeCollector."""
 import datetime
 import json
+import math
 import re
 from typing import NamedTuple
 
@@ -27,19 +28,23 @@ def parse_host(text: str) -> tuple[str, str, str]:
     return hostname, kernel, os_name
 
 
-def parse_uptime(text: str) -> float:
+def _finite(text: str, default: float = 0.0) -> float:
+    """float() that also rejects "nan" / "inf" (Python accepts both; host output must not)."""
     try:
-        return float(text.split()[0])
-    except (IndexError, ValueError):
-        return 0.0
+        value = float(text)
+    except (TypeError, ValueError):
+        return default
+    return value if math.isfinite(value) else default
+
+
+def parse_uptime(text: str) -> float:
+    parts = text.split()
+    return max(0.0, _finite(parts[0])) if parts else 0.0
 
 
 def parse_loadavg(text: str) -> tuple[float, float, float]:
-    parts = text.split()
-    try:
-        return float(parts[0]), float(parts[1]), float(parts[2])
-    except (IndexError, ValueError):
-        return 0.0, 0.0, 0.0
+    parts = (text.split() + ["", "", ""])[:3]
+    return tuple(max(0.0, _finite(p)) for p in parts)
 
 
 def parse_sysconf(text: str) -> tuple[int, int, int]:
@@ -47,7 +52,7 @@ def parse_sysconf(text: str) -> tuple[int, int, int]:
     values = []
     for line in text.splitlines():
         line = line.strip()
-        values.append(int(line) if line.isdigit() else 0)
+        values.append(int(line) if line.isdecimal() else 0)
     values += [0, 0, 0]
     cores, clk, page = values[:3]
     return max(cores, 1), clk or 100, page or 4096
@@ -93,7 +98,7 @@ def parse_meminfo(text: str) -> MemoryMetric:
             continue
         key, rest = line.split(":", 1)
         parts = rest.split()
-        if parts and parts[0].isdigit():
+        if parts and parts[0].isdecimal():
             kb[key.strip()] = int(parts[0]) * 1024
 
     total = kb.get("MemTotal", 0)
@@ -227,7 +232,7 @@ def parse_procstat(text: str) -> dict[int, ProcSample]:
     out = {}
     for line in text.splitlines():
         parts = line.split(None, 3)
-        if len(parts) < 3 or not parts[0].isdigit() or not parts[1].isdigit():
+        if len(parts) < 3 or not parts[0].isdecimal() or not parts[1].isdecimal():
             continue
         try:
             rss = int(parts[2])
@@ -241,7 +246,7 @@ def parse_procusers(text: str) -> dict[int, str]:
     out = {}
     for line in text.splitlines():
         parts = line.split()
-        if len(parts) == 2 and parts[0].isdigit():
+        if len(parts) == 2 and parts[0].isdecimal():
             out[int(parts[0])] = parts[1]
     return out
 
@@ -404,7 +409,7 @@ def parse_backup_files(text: str) -> tuple[list[str], dict[str, int], dict[str, 
     for line in text.splitlines():
         if line.startswith("SNAP "):
             parts = line.split(" ", 2)
-            if len(parts) == 3 and parts[1].isdigit():
+            if len(parts) == 3 and parts[1].isdecimal():
                 name = parts[2].rsplit("/", 1)[-1]
                 names.append(name)
                 sizes[name] = int(parts[1])
@@ -420,8 +425,14 @@ def parse_backup_files(text: str) -> tuple[list[str], dict[str, int], dict[str, 
 # --- SOC: fail2ban, authentication activity, privileged access ------------------------------------
 
 def _jail_value(text: str, label: str) -> str:
-    m = re.search(rf"{re.escape(label)}:\s*(.*)", text)
+    # [ \t]* rather than \s*: an empty value must not swallow the next line
+    m = re.search(rf"{re.escape(label)}:[ \t]*([^\n]*)", text)
     return m.group(1).strip() if m else ""
+
+
+def _jail_int(text: str, label: str) -> int:
+    value = _jail_value(text, label)
+    return int(value) if value.isdecimal() else 0
 
 
 def parse_fail2ban(text: str) -> Fail2banStatus:
@@ -435,13 +446,16 @@ def parse_fail2ban(text: str) -> Fail2banStatus:
 
     jails = []
     for block in re.split(r"^#JAIL ", text, flags=re.M)[1:]:
-        name = block.splitlines()[0].strip()
+        lines = block.splitlines()
+        if not lines or not lines[0].strip():
+            continue
+        name = lines[0].strip()
         ips = _jail_value(block, "Banned IP list").split()
         jails.append(Fail2banJail(
             name=name,
-            currently_failed=int(_jail_value(block, "Currently failed") or 0),
-            currently_banned=int(_jail_value(block, "Currently banned") or 0),
-            total_banned=int(_jail_value(block, "Total banned") or 0),
+            currently_failed=_jail_int(block, "Currently failed"),
+            currently_banned=_jail_int(block, "Currently banned"),
+            total_banned=_jail_int(block, "Total banned"),
             banned_ips=ips[:50],
         ))
     return Fail2banStatus(installed=True, running=True if jails or running is None else running, known=True, jails=jails)
@@ -449,7 +463,10 @@ def parse_fail2ban(text: str) -> Fail2banStatus:
 
 def _epoch_or_text(stamp: str) -> str:
     if re.fullmatch(r"\d+\.\d+", stamp):
-        return datetime.datetime.fromtimestamp(float(stamp)).strftime("%Y-%m-%d %H:%M")
+        try:
+            return datetime.datetime.fromtimestamp(float(stamp)).strftime("%Y-%m-%d %H:%M")
+        except (OverflowError, OSError, ValueError):
+            return stamp
     return stamp.replace("_", " ") if stamp != "-" else ""
 
 
@@ -465,12 +482,12 @@ def parse_auth(text: str) -> AuthActivity:
             activity.window = "son 24 saat" if rest == "journal" else ("" if rest == "none" else "son 20.000 log satırı")
             if rest == "none":
                 activity.known = False
-        elif key in ("FAILED", "INVALID", "ACCEPTED", "ACCEPTED_PASSWORD") and rest.isdigit():
+        elif key in ("FAILED", "INVALID", "ACCEPTED", "ACCEPTED_PASSWORD") and rest.isdecimal():
             setattr(activity, {"FAILED": "failed", "INVALID": "invalid_user", "ACCEPTED": "accepted",
                                "ACCEPTED_PASSWORD": "accepted_password"}[key], int(rest))
         elif key in ("FIP", "FUSER"):
             count, _, value = rest.partition(" ")
-            if count.isdigit() and value:
+            if count.isdecimal() and value:
                 item = CountedItem(value=value, count=int(count))
                 (activity.top_sources if key == "FIP" else activity.top_users).append(item)
         elif key == "ACC":
@@ -523,17 +540,16 @@ def parse_updates(text: str, now: float) -> UpdateStatus:
         rest = rest.strip()
         if key == "MANAGER":
             st.manager = rest
-        elif key == "TOTAL" and rest.isdigit():
+        elif key == "TOTAL" and rest.isdecimal():
             st.total, st.known = int(rest), True
         elif key == "SECURITY":
-            st.security = int(rest) if rest.isdigit() else None
+            st.security = int(rest) if rest.isdecimal() else None
         elif key == "SECPKG" and rest and len(st.security_packages) < 30:
             st.security_packages.append(rest)
         elif key == "META":
-            try:
-                st.metadata_age_days = max(0.0, (now - float(rest)) / 86400)
-            except ValueError:
-                pass
+            stamp = _finite(rest, default=-1.0)
+            if stamp >= 0:
+                st.metadata_age_days = max(0.0, (now - stamp) / 86400)
         elif key == "KERNEL":
             st.running_kernel = rest
         elif key == "KERNELS":
@@ -676,7 +692,7 @@ def parse_docker_security(text: str) -> dict[str, ContainerSecurity]:
         result[name.lstrip("/")] = ContainerSecurity(
             user=user, privileged=privileged == "true", network_mode=net, pid_mode=pid,
             cap_add=[str(c) for c in cap_list if isinstance(c, str)][:20],
-            restart_count=int(restarts) if restarts.isdigit() else 0, health=health,
+            restart_count=int(restarts) if restarts.isdecimal() else 0, health=health,
             mounts=mount_list[:50], read_only_root=ro == "true",
         )
     return result
@@ -706,7 +722,7 @@ def parse_access(text: str) -> AccessAudit:
             sudoers_lines.append(line)
         elif block == "AUTHKEYS":
             user, _, count = line.partition(" ")
-            if count.isdigit():
+            if count.isdecimal():
                 audit.authorized_keys[user] = int(count)
                 audit.keys_known = True
             elif count == "?":

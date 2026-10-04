@@ -447,3 +447,17 @@ def test_fast_tier_never_uses_sudo():
         script, _ = build_script(fast=True, baseline=True, sudo=sudo)
         body = "\n".join(line for line in script.splitlines() if not line.lstrip().startswith("#"))
         assert "sudo" not in body.split('S=""', 1)[1]
+
+
+def test_unicode_digits_never_crash_parsers():
+    # "²".isdigit() is True but int("²") raises; found by the fuzzer in PROCSTAT
+    assert pp.parse_procstat("² 166 1244 process_api\n7 1 2 sh\n") .keys() == {7}
+    assert pp.parse_updates("MANAGER apt\nTOTAL ³\nSECURITY ¹\n", 0).known is False
+    assert pp.parse_procusers("¹ root\n9 deploy\n") == {9: "deploy"}
+
+
+def test_nan_inf_and_huge_numbers_from_the_host():
+    assert pp.parse_uptime("nan 12") == 0.0 and pp.parse_uptime("inf") == 0.0 and pp.parse_uptime("-5") == 0.0
+    assert pp.parse_loadavg("nan inf 0.5 1/2 3") == (0.0, 0.0, 0.5)
+    assert pp.parse_updates("MANAGER apt\nMETA nan\nTOTAL 1\n", 100).metadata_age_days is None
+    assert pp.parse_auth("SOURCE journal\nACCEPTED 1\nACC 99999999999999999.5 publickey root 1.2.3.4\n").recent_accepted

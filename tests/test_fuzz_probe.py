@@ -68,6 +68,8 @@ SAMPLES = {
         "SNAP 120 ./backups/store-20261001-020000.json\nSNAP 7 /srv/app data/store-20261002-020000.json\n"
         "FILE:./last-successful-deploy.sha\na1b2c3d4e5f6\n"
     ),
+    "DOCKER_SEC": ("/web|1000|false|bridge||[\"NET_ADMIN\"]|3|healthy|/srv/www>/var/www>true;|false\n"
+                   "/priv||true|host|host|null|0||/var/run/docker.sock>/var/run/docker.sock>true;|false\n"),
     "CRONTAB": "0 2 * * * /usr/local/bin/backup.sh\n*/5 * * * * curl -s http://localhost/health\n",
     "AUTH": (
         "SOURCE journal\nFAILED 120\nINVALID 30\nACCEPTED 4\nACCEPTED_PASSWORD 1\n"
@@ -230,3 +232,63 @@ async def test_tui_renders_hostile_telemetry():
                 await pilot.pause()
         await settle(pilot)
         assert app.is_running
+
+
+EXHAUSTIVE_TOKENS = ["", "abc", "-1", "²", "nan", "inf", "1e999", "99999999999999999999999", "0x10", "=1", ":", "/",
+                     "(", "[/]", "\x00", "ü"]
+
+
+EXTRA_SAMPLES = {
+    "SS": (Path(__file__).parent / "fixtures" / "ss_output.txt").read_text(),
+    "DOCKER": ('{"ID":"abc","Names":"web","Image":"nginx:1","Status":"Up 2 hours","Ports":"0.0.0.0:8080->80/tcp, :::8080->80/tcp"}\n'),
+    "DOCKER_DF": ('{"Type":"Images","TotalCount":"5","Active":"2","Size":"2.1GB","Reclaimable":"1.2GB (57%)"}\n'
+                  '{"Type":"Build Cache","TotalCount":"40","Active":"0","Size":"12.5GB","Reclaimable":"12.5GB"}\n'),
+    "CONTAINERD_SZ": "28G\t/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs\n",
+    "SSHD_CONF": "#EFFECTIVE\nport 22\npermitrootlogin prohibit-password\npasswordauthentication yes\n",
+}
+
+
+def _section_parsers():
+    from pulseops.collectors import probe_parsers as pp
+    from pulseops.collectors.backup_collector import BackupCollector
+    from pulseops.collectors.nginx_parser import NginxParser
+    from pulseops.collectors.port_collector import PortCollector
+    from pulseops.collectors.privilege_collector import parse_privileges_section
+    from pulseops.collectors.security_collector import SecurityCollector
+    from pulseops.collectors.service_collector import ServiceCollector
+    from pulseops.collectors.storage_collector import StorageCollector
+
+    return {
+        "HOST": pp.parse_host, "UPTIME": pp.parse_uptime, "LOADAVG": pp.parse_loadavg, "SYSCONF": pp.parse_sysconf,
+        "CPUSTAT": pp.parse_cpustat, "MEM": pp.parse_meminfo, "DISK": pp.parse_df, "DISKSTATS": pp.parse_diskstats,
+        "NET": pp.parse_net_dev, "PROCSTAT": pp.parse_procstat, "PROCUSERS": pp.parse_procusers,
+        "PORT_OWNERS": pp.parse_socket_owners, "PORTS": lambda s: pp.parse_proc_net(s, {}, {}),
+        "FIREWALL": pp.parse_firewall, "BACKUP_FILES": pp.parse_backup_files, "FAIL2BAN": pp.parse_fail2ban,
+        "AUTH": pp.parse_auth, "ACCESS": pp.parse_access, "UPDATES": lambda s: pp.parse_updates(s, 1e9),
+        "HARDEN": pp.parse_hardening, "DOCKER_SEC": pp.parse_docker_security, "PRIV": parse_privileges_section,
+        "NGINX": NginxParser().parse_config_text, "SERVICES": lambda s: ServiceCollector().parse_systemctl_units(s, ""),
+        "UNIT_FILES": lambda s: ServiceCollector().parse_systemctl_units("", s),
+        "TIMERS": BackupCollector().parse_timers_text, "CRONTAB": BackupCollector().parse_crontab_text,
+        "DOCKER": ProbeCollector._parse_containers, "DOCKER_DF": lambda s: StorageCollector().parse_docker_df(s, ""),
+        "CONTAINERD_SZ": lambda s: StorageCollector().parse_docker_df("", s),
+        "SSHD_CONF": SecurityCollector().parse_sshd_config_text,
+        "SS": PortCollector().parse_ss_text,
+    }
+
+
+def test_every_token_of_every_parser_input_survives_hostile_values():
+    """Deterministic complement to the random fuzzer: each token, one at a time, gets each hostile value."""
+    failures = []
+    for name, parse in _section_parsers().items():
+        sample = CORPUS.get(name) or SAMPLES.get(name) or EXTRA_SAMPLES.get(name, "")
+        lines = sample.splitlines()[:60]
+        for i, line in enumerate(lines):
+            tokens = re.split(r"(\s+)", line)  # separators kept: tab-separated values get mutated too
+            for j in range(0, len(tokens), 2):
+                for bad in EXHAUSTIVE_TOKENS:
+                    mutated = lines[:i] + ["".join(tokens[:j] + [bad] + tokens[j + 1:])] + lines[i + 1:]
+                    try:
+                        parse("\n".join(mutated))
+                    except Exception as e:  # collect all, report together
+                        failures.append(f"{name} line {i} token {j} -> {bad!r}: {type(e).__name__}: {e}")
+    assert not failures, "\n".join(failures[:30]) + f"\n... {len(failures)} failures"

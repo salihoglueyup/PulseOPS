@@ -236,3 +236,10 @@ def test_parse_access_unknown_homes():
 
     audit = pp.parse_access("#UID0\nroot\n#AUTHKEYS\nroot ?\ndeploy 2\n")
     assert audit.authorized_keys == {"deploy": 2} and audit.authorized_keys_unknown == ["root"]
+
+
+def test_hostile_user_names_in_authorized_keys(base):
+    # Found by the fuzzer: a user name with "=" broke the user=count encoding
+    t2 = changed(base, security__access__authorized_keys={"root": 1, "deploy": 2, "x=y": 3})
+    got = messages(diff(fingerprint(base), fingerprint(t2)))
+    assert (HIGH, "x=y hesabına 3 yeni SSH anahtarı eklendi (0 → 3)") in got

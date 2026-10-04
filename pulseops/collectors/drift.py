@@ -170,8 +170,8 @@ def diff(old: Fingerprint, new: Fingerprint) -> list[Change]:
         for problem in removed:
             add("hardening", INFO, f"Dosya izni düzeltildi: {problem}")
     if both("authorized_keys"):
-        before = dict(item.split("=", 1) for item in old["authorized_keys"])
-        after = dict(item.split("=", 1) for item in new["authorized_keys"])
+        before = dict(item.rsplit("=", 1) for item in old["authorized_keys"])
+        after = dict(item.rsplit("=", 1) for item in new["authorized_keys"])
         for user in sorted(set(before) | set(after)):
             if before.get(user) == "?" or after.get(user) == "?":
                 continue  # one of the observers could not read this user's keys
