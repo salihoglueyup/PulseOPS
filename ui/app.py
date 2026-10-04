@@ -3,7 +3,7 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, TabbedContent, TabPane, Input
 from textual.binding import Binding
 from textual import events
@@ -48,7 +48,6 @@ THEMES = [
     ("matrix", "Matrix Hacker"),
 ]
 
-from ui.theme_css import DEFAULT_TCSS
 from ui.ascii_filter import AsciiFilter
 
 _CSS_FILE = Path(__file__).parent / "styles.tcss"
@@ -58,10 +57,7 @@ class ServerTUIApp(App):
 
     TITLE = "PulseOps"
     SUB_TITLE = "PulseTUI - Agentless Kurumsal Sunucu Gözlem Paneli"
-    if _CSS_FILE.exists():
-        CSS_PATH = _CSS_FILE
-    else:
-        DEFAULT_CSS = DEFAULT_TCSS
+    CSS_PATH = _CSS_FILE  # shipped as package data and with PyInstaller --add-data
 
     BINDINGS = [
         Binding("1", "tab_1", "Dashboard (1)", show=True),
@@ -166,23 +162,31 @@ class ServerTUIApp(App):
                 )
                 yield self.dashboard_status_bar
             with TabPane("[2] Süreçler", id="tab-processes"):
-                yield self.top_processes_panel
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.top_processes_panel
             with TabPane("[3] Portlar", id="tab-ports"):
-                yield self.all_ports_table
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.all_ports_table
             with TabPane("[4] Servisler", id="tab-services"):
-                yield self.services_table
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.services_table
             with TabPane("[5] Veritabanı", id="tab-databases"):
-                yield self.database_panel
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.database_panel
             with TabPane("[6] Siteler", id="tab-websites"):
-                yield self.port_table
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.port_table
             with TabPane("[7] Yedekler", id="tab-backups"):
-                yield self.backup_detail_view
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.backup_detail_view
             with TabPane("[8] Loglar", id="tab-logs"):
                 yield self.log_viewer
             with TabPane("[9] Güvenlik", id="tab-security"):
-                yield self.security_panel
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.security_panel
             with TabPane("[0] Depolama", id="tab-storage"):
-                yield self.storage_panel
+                with VerticalScroll(classes="tab-scroll"):
+                    yield self.storage_panel
         yield Footer()
 
     def notify(self, message, *, markup: bool = False, **kwargs):
@@ -209,7 +213,17 @@ class ServerTUIApp(App):
         if event.input.id == "search-input":
             self.query_one("#search-bar").remove_class("visible")
             self.search_input.can_focus = False
-            self.set_focus(None)
+            self._focus_active_tab()
+
+    def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        if not self.search_input.has_focus:
+            self._focus_active_tab()
+
+    def _focus_active_tab(self) -> None:
+        """Arrow keys / PgUp / PgDn scroll the active tab when its content is taller than the terminal."""
+        pane = self.query_one(TabbedContent).active_pane
+        scrolls = pane.query(".tab-scroll") if pane is not None else []
+        self.set_focus(scrolls.first() if scrolls else None)
 
     def action_tab_1(self) -> None:
         self.query_one(TabbedContent).active = "tab-dashboard"
@@ -257,7 +271,7 @@ class ServerTUIApp(App):
             self.search_input.can_focus = False
             self.search_input.value = ""
             self.port_table.filter_query = ""
-            self.set_focus(None)
+            self._focus_active_tab()
         else:
             search_bar.add_class("visible")
             self.search_input.can_focus = True

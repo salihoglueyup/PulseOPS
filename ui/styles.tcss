@@ -108,6 +108,11 @@ TabPane {
 }
 
 /* Panel Layouts */
+.tab-scroll {
+    height: 1fr;
+    scrollbar-size-vertical: 1;
+}
+
 VitalsPanel {
     height: 9;
     margin: 0 1;
@@ -119,10 +124,9 @@ AlertTicker {
 }
 
 PortProxyTable {
-    height: 1fr;
+    height: auto;
     min-height: 7;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 #bottom-row {
@@ -149,15 +153,13 @@ ServicePanel {
 }
 
 AllPortsTable {
-    height: 1fr;
+    height: auto;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 TopProcessesPanel {
-    height: 1fr;
+    height: auto;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 LogViewerWidget {
@@ -167,33 +169,28 @@ LogViewerWidget {
 }
 
 BackupDetailView {
-    height: 1fr;
+    height: auto;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 ServicesTable {
-    height: 1fr;
+    height: auto;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 DatabasePanel {
-    height: 1fr;
+    height: auto;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 SecurityPanel {
-    height: 1fr;
+    height: auto;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 StoragePanel {
-    height: 1fr;
+    height: auto;
     margin: 0 1;
-    overflow-y: auto;
 }
 
 DashboardStatusBar {

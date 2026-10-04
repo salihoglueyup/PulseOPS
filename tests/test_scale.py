@@ -58,3 +58,24 @@ def test_failed_services_are_never_capped_away(telemetry):
     failed = sorted(s.name for s in t.services if s.state == ServiceState.FAILED)
     assert failed == sorted(f"svc-{i:04d}.service" for i in range(N_SVC) if i % 50 == 49)
     assert len(t.services) <= 25 + len(failed) + 10  # still capped for display
+
+
+@pytest.mark.asyncio
+async def test_long_tabs_scroll_on_a_small_terminal():
+    """Tab content taller than an 80x24 SSH terminal must be reachable (it used to be cut off)."""
+    from collectors.probe_collector import ProbeCollector
+    from conftest import settle
+    from test_fuzz_probe import FuzzTransport
+    from ui.app import ServerTUIApp
+
+    app = ServerTUIApp(collector=ProbeCollector(FuzzTransport(big_host())), poll_interval=3600)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await settle(pilot)
+        for key, widget in (("3", app.all_ports_table), ("9", app.security_panel), ("4", app.services_table)):
+            await pilot.press(key)
+            await settle(pilot)
+            scroll = widget.parent
+            assert app.focused is scroll and scroll.max_scroll_y > 0
+            await pilot.press("end")
+            await settle(pilot)
+            assert scroll.scroll_y == scroll.max_scroll_y
