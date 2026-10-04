@@ -4,7 +4,7 @@
 > `pulseops` yazarak TUI'yi doğrudan sunucu üzerinde çalıştırmaktır. Uzaktan SSH ile
 > bağlanma modu (`pulseops user@host`) ikincil olarak desteklenmeye devam eder.
 >
-> Kapsam dışı (şimdilik): Ollama / yerel AI entegrasyonu, Windows, macOS, ARM.
+> Kapsam dışı (şimdilik): Windows, macOS, ARM.
 
 Durum: ✅ tamamlandı · 🚧 devam ediyor · ⬜ planlandı
 
@@ -176,6 +176,16 @@ Bu fazda bulunan ve düzeltilen hatalar:
 - ✅ **`pulseops schedule`:** cron yerine systemd zamanlayıcısı; CI'da gerçek kurulum, çalıştırma ve kaldırma
 - Salt-okunur koruma testi paket yöneticilerini de kapsıyor (`-s`'siz apt, `-C`'siz dnf yasak; mutasyon testli)
 
-## Sıradaki
+- ✅ **v1.3.0 yayınlandı** ve doğrulandı (dosyalar, SHA-256, v1.2.0'dan `update`, binary'den canlı probe)
 
-- ⬜ Faz 4 — Ollama ile yerel AI: uyarı ve değişikliklerin yorumlanması, SOC asistanı
+## Faz 4 — Yerel AI (Ollama) ✅
+
+- ✅ `pulseops ai status | explain | ask` ve TUI'de `i`: yapılandırılmış telemetri özetinin (skor, uyarılar, portlar,
+  SSH aktivitesi, hesaplar, güncellemeler, sertleştirme, konteynerler, son güvenlik değişiklikleri) yerel modelle
+  SOC tarzı yorumu; yanıt akarak gelir, takip soruları aynı bağlamda sorulur
+- ✅ Güvenlik: loopback dışı Ollama için açık onay (`allow_remote`), proxy'yi atlama, IP/hostname maskeleme,
+  rastgele anahtarlı veri bloğu ile prompt injection'a karşı ayrım, ham loglar varsayılan olarak gönderilmez,
+  model çıktısında terminal kaçış dizisi temizliği, markup olarak yorumlamama, hiçbir komutun çalıştırılmaması,
+  `--show-prompt` ile şeffaflık
+- ✅ Testler: Ollama API'sini (akışlı `/api/chat`, `/api/tags`, hatalar) taklit eden sunucu ile CLI ve TUI;
+  CI'da gerçek `ollama/ollama` konteyneri ve küçük bir modelle (qwen2.5:0.5b) uçtan uca

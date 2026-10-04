@@ -75,6 +75,16 @@ class FleetConfig(_Section):
     parallel: int = Field(8, ge=1, le=64, description="Aynı anda sorgulanacak en fazla sunucu")
 
 
+class AIConfig(_Section):
+    url: str = Field("http://127.0.0.1:11434", description="Ollama adresi")
+    model: str = Field("qwen2.5:7b", description="Kullanılacak model (`ollama pull <model>`)")
+    timeout: float = Field(180.0, ge=5, le=3600, description="Yanıt için en fazla bekleme (sn)")
+    num_ctx: int = Field(8192, ge=2048, le=131072, description="Model bağlam penceresi (token)")
+    allow_remote: bool = Field(False, description="localhost dışındaki bir Ollama'ya telemetri gönderilmesine izin ver")
+    redact: bool = Field(False, description="IP adreslerini ve hostname'i modele göndermeden önce maskele")
+    include_logs: bool = Field(False, description="Son log satırlarını da gönder (komut enjeksiyonu riski taşıyan ham metin)")
+
+
 class Config(_Section):
     general: GeneralConfig = Field(default_factory=GeneralConfig)
     fleet: FleetConfig = Field(default_factory=FleetConfig)
@@ -83,6 +93,7 @@ class Config(_Section):
     ssh: SSHConfig = Field(default_factory=SSHConfig)
     check: CheckConfig = Field(default_factory=CheckConfig)
     alerts: AlertConfig = Field(default_factory=AlertConfig)
+    ai: AIConfig = Field(default_factory=AIConfig)
 
 
 class ConfigError(Exception):

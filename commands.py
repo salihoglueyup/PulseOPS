@@ -308,6 +308,65 @@ def cmd_status(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_ai(args: argparse.Namespace) -> int:
+    from ai import AIError, OllamaClient, Conversation, build_context, build_messages, check_url
+
+    cfg = _config(args).ai
+    if getattr(args, "model", None):
+        cfg = cfg.model_copy(update={"model": args.model})
+
+    if args.ai_command == "status":
+        print(f"Adres:   {cfg.url}")
+        print(f"Model:   {cfg.model}")
+        print(f"Gizlilik: {'IP/hostname maskeleniyor' if cfg.redact else 'maskeleme kapalı'}, "
+              f"loglar {'gönderiliyor' if cfg.include_logs else 'gönderilmiyor'}, "
+              f"uzak sunucu {'izinli' if cfg.allow_remote else 'yasak'}")
+        try:
+            check_url(cfg)
+            models = OllamaClient(cfg).models()
+        except AIError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            return 1
+        installed = cfg.model in models or f"{cfg.model}:latest" in models
+        print(f"Ollama:  ✓ erişilebilir, {len(models)} model kurulu")
+        if not installed:
+            print(f"❌ {cfg.model} kurulu değil. Kurmak için: ollama pull {cfg.model}", file=sys.stderr)
+            return 1
+        print(f"✓ {cfg.model} hazır")
+        return 0
+
+    question = " ".join(args.question) if args.ai_command == "ask" else args.question
+    if args.ai_command == "ask" and not question.strip():
+        print("❌ Bir soru yazın: pulseops ai ask \"neden yavaş?\"", file=sys.stderr)
+        return 2
+    t = _collect_or_exit(build_collector(args))
+    store = _history_store(args)
+    _record_history(store, t, _config(args))
+    changes = _recent_changes(store, t)
+
+    if args.show_prompt:
+        # Exactly what would be sent, for review; nothing leaves the machine
+        print(json.dumps(build_messages(build_context(t, changes, cfg), question), ensure_ascii=False, indent=2))
+        return 0
+    try:
+        conversation = Conversation(cfg, t, changes)
+    except AIError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return 1
+    print(f"🤖 {cfg.model} · {t.snapshot.hostname} analiz ediliyor...\n", file=sys.stderr)
+    try:
+        conversation.ask(question, on_piece=lambda piece: (sys.stdout.write(piece), sys.stdout.flush()))
+    except AIError as e:
+        print(f"\n❌ {e}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\n(yarıda kesildi)", file=sys.stderr)
+        return 130
+    print()
+    print("\nℹ️  Bu bir model çıktısıdır: komutları çalıştırmadan önce doğrulayın.", file=sys.stderr)
+    return 0
+
+
 def _fmt_time(ts: float) -> str:
     import time
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
@@ -650,6 +709,7 @@ def launch_tui(args: argparse.Namespace, config: Config, collector, log_path=Non
         slow_interval=opts["slow_interval"],
         ascii_mode=opts["ascii"],
         alert_thresholds=config.alerts,
+        ai_config=config.ai,
     )
     app.run(mouse=opts["mouse"])
     if app.return_code not in (None, 0) and log_path:
@@ -828,10 +888,25 @@ def build_subcommand_parsers() -> argparse.ArgumentParser:
     add_installer_subcommands(sub)
     from scheduler import add_schedule_subcommand
     add_schedule_subcommand(sub)
+
+    p_ai = sub.add_parser("ai", help="Yerel AI (Ollama) ile SOC analizi")
+    ai_sub = p_ai.add_subparsers(dest="ai_command", required=True)
+    p_ai_status = ai_sub.add_parser("status", help="Ollama'ya erişimi ve modeli kontrol et")
+    p_ai_explain = ai_sub.add_parser("explain", help="Sunucunun güvenlik ve sağlık durumunu yorumla")
+    add_connection_args(p_ai_explain)
+    p_ai_explain.add_argument("-q", "--question", default=None, help="Varsayılan analiz yerine bu soruyu sor")
+    p_ai_ask = ai_sub.add_parser("ask", help="Sunucu hakkında serbest soru sor")
+    p_ai_ask.add_argument("question", nargs="+", help='Soru, ör. "SSH saldırıları ne kadar ciddi?"')
+    add_connection_args(p_ai_ask)
+    for p in (p_ai_status, p_ai_explain, p_ai_ask):
+        p.add_argument("-m", "--model", default=None, help="Yapılandırmadaki model yerine bunu kullan")
+    for p in (p_ai_explain, p_ai_ask):
+        p.add_argument("--show-prompt", action="store_true", help="Modele gidecek veriyi göster, gönderme")
+    p_ai.set_defaults(func=cmd_ai)
     return parser
 
 
-SUBCOMMANDS = ("status", "report", "check", "fleet", "history", "notify", "config", "probe", "schedule", "update", "uninstall",
+SUBCOMMANDS = ("status", "report", "check", "fleet", "history", "notify", "config", "probe", "schedule", "ai", "update", "uninstall",
                "version")
 
 

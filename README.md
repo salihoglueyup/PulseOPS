@@ -236,7 +236,39 @@ Erişilemeyen sunucu `UNKNOWN` olur; erişilemez hale gelmesi ve düzelmesi de b
 yollardan (ör. `local` ve SSH) izlense bile geçmiş ve değişiklik tespiti makine kimliğiyle (`/etc/machine-id`)
 birleştirilir; değişiklikler bir kez raporlanır.
 
-### 8. Yapılandırma
+### 8. Yerel AI Analizi (Ollama)
+
+PulseOps toplanan veriyi **kendi makinenizdeki** bir Ollama modeline yorumlatabilir: öncelikli bulgular,
+nedenleri, VERİ'deki kanıtı ve uygulanabilir adımlar (Türkçe). Hiçbir komut otomatik çalıştırılmaz.
+
+```bash
+ollama pull qwen2.5:7b                 # bir kez (daha küçük makinede: qwen2.5:3b, llama3.2:3b)
+pulseops ai status                     # Ollama erişilebilir mi, model kurulu mu?
+pulseops ai explain                    # bu sunucunun SOC analizi (akarak gelir)
+pulseops ai ask "SSH saldırıları ne kadar ciddi, ne yapmalıyım?"
+pulseops ai explain root@web01         # uzak sunucu için de
+pulseops ai explain --show-prompt      # modele gidecek veriyi göster, GÖNDERME
+```
+
+TUI'de `i` tuşu aynı analizi açar ve takip soruları sorulabilir.
+
+```toml
+[ai]
+url = "http://127.0.0.1:11434"
+model = "qwen2.5:7b"
+redact = false        # true: IP adresleri ve hostname modele gitmeden maskelenir
+include_logs = false  # ham log satırları varsayılan olarak gönderilmez
+allow_remote = false  # başka bir makinedeki Ollama için bilinçli onay
+```
+
+**Güvenlik:** Telemetri varsayılan olarak makineden çıkmaz (localhost dışı adres `allow_remote` olmadan
+reddedilir, istekler proxy'den geçmez). Sunucudan gelen veri güvenilmez kabul edilir: log satırı veya süreç
+adına gizlenmiş "önceki talimatları unut" gibi **prompt injection** girişimlerine karşı veri, her istekte
+değişen bir anahtarla çevrili ayrı bir blokta gönderilir ve modelden içindeki talimatlara uymaması istenir.
+Model çıktısı terminale ulaşmadan kontrol/kaçış karakterlerinden temizlenir ve markup olarak yorumlanmaz.
+Ayrıntılar: [docs/SECURITY.md](docs/SECURITY.md#7-yerel-ai-ollama).
+
+### 9. Yapılandırma
 
 ```bash
 pulseops config           # geçerli ayarlar ve okunan dosyalar
@@ -269,7 +301,7 @@ Sorun giderme için log dosyası: `~/.cache/pulseops/pulseops.log`.
 
 Güvenlik ekipleri için ayrıntılı model (çalıştırılan komutlar, sudo, SSH, yazılan dosyalar): [docs/SECURITY.md](docs/SECURITY.md).
 
-### 9. Nasıl Çalışır?
+### 10. Nasıl Çalışır?
 
 Yerel modda da SSH modunda da hedef makinede aynı salt-okunur shell betiği (`sh -s`) çalışır ve çıktısı aynı kodla ayrıştırılır. Ucuz ve sık değişen metrikler (CPU, RAM, ağ, portlar, süreçler) her 2 saniyede, `systemctl`, `docker`, `nginx -T` gibi ağır kontroller 30 saniyede bir toplanır; veri toplama ayrı bir thread'de yürür, arayüz hiç beklemez. 4 çekirdekli bir sunucuda canlı modun kendi tükettiği CPU tek çekirdeğin yaklaşık %2'si kadardır (`--interval 5` ile ~%1.3).
 
@@ -308,6 +340,7 @@ PulseOps klavyedeki `1` - `0` tuşlarıyla geçiş yapılabilen 10 derinlemesine
 | **`c`** | **Konfigürasyon İnceleyici:** Nginx, Docker veya SSH ayar dosyalarını sözdizimi renklendirmesiyle açar. |
 | **`a`** | **Akıllı Risk & Uyarı Paneli:** Sunucudaki açık riskleri (açık portlar, süresi biten SSL, şişmiş cache) listeler. |
 | **`h`** | **Geçmiş & Değişiklikler:** 24 saatlik trendler ve 7 günlük güvenlik değişikliği akışı. |
+| **`i`** | **AI Analizi (Ollama):** Yerel modelin sunucu yorumu akarak gelir; alttaki kutudan takip sorusu sorulur. |
 | **`e`** | **Yönetici Denetim Raporu Al:** Tek tuşla tam kapsamlı Markdown röntgen raporu üretir (`audit-reports/`). |
 | **`/`** | **Canlı Filtreleme & Arama:** Web siteleri ve port tablolarında anında arama yapar. |
 | **`t`** | **Tema Değiştir:** Kurumsal koyu temalar arasında geçiş yapar. |

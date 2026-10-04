@@ -83,7 +83,21 @@ bir nonce içerir; komut çıktısı sahte bölüm enjekte edemez.
 | `audit-reports/*.md` | `e` tuşu veya `pulseops report` ile |
 | `~/.local/share/pulseops/history.db` | Metrik örnekleri (30 gün) ve güvenlik değişiklikleri (180 gün); 0600, dizin 0700. Kullanıcı adları, port/süreç adları ve sudoers satırları içerir. Kapatmak için `[history] enabled = false` |
 
-PulseOps, SSH bağlantısı, `pulseops update` (GitHub release, SHA-256 doğrulamalı) ve **sizin tanımladığınız**
-bildirim kanalları dışında ağ bağlantısı kurmaz. Bildirimler yalnızca `check` sonucunun özetini (durum, skor,
+PulseOps, SSH bağlantısı, `pulseops update` (GitHub release, SHA-256 doğrulamalı), **sizin tanımladığınız**
+bildirim kanalları ve `pulseops ai` / `i` tuşuyla açıkça istendiğinde Ollama dışında ağ bağlantısı kurmaz. Bildirimler yalnızca `check` sonucunun özetini (durum, skor,
 uyarılar, güvenlik değişiklikleri) içerir; ham telemetri gönderilmez. Kanal sırları için `env:DEGISKEN` kullanın;
 düz metin sır içeren bir yapılandırma dosyası başka kullanıcılarca okunabiliyorsa PulseOps uyarır.
+
+## 7. Yerel AI (Ollama)
+
+`pulseops ai` ve TUI'deki `i` tuşu, toplanan telemetrinin **özetini** bir Ollama modeline gönderir.
+
+| Risk | Önlem |
+| :--- | :--- |
+| Telemetrinin makineden çıkması | Varsayılan adres `127.0.0.1`; loopback dışı adresler `[ai] allow_remote = true` olmadan reddedilir. İstekler ortamdaki `HTTP(S)_PROXY` ayarlarını **kullanmaz**. `redact = true` IP adreslerini (`IP-1`, `IP-2`… tutarlı biçimde) ve hostname'i maskeler; `0.0.0.0` / `127.0.0.1` gibi dinleme adresleri anlamları için korunur |
+| Prompt injection (sunucudaki metin modele talimat verir) | Log satırları, süreç/konteyner/kullanıcı adları ve sudoers kuralları saldırganca yazılabilir. Veri, her istekte rastgele üretilen bir anahtarla (`<<<VERI-xxxxxxxxxxxx`) çevrili JSON bloğunda gönderilir; sistem talimatı bloğun içindekinin yalnızca kanıt olduğunu, hiçbir talimatının uygulanmayacağını söyler. Ham loglar varsayılan olarak **gönderilmez** (`include_logs`) |
+| Modelin önerdiği komutun çalışması | Hiçbir şey çalıştırılmaz; model yalnızca metin üretir ve araç/komut erişimi yoktur. Her yanıtın sonunda doğrulama uyarısı gösterilir |
+| Model çıktısıyla terminal saldırısı (kaçış dizileri, OSC 52 pano yazma, ekran silme) | Çıktı terminale/TUI'ye ulaşmadan C0/C1 kontrol karakterlerinden temizlenir; TUI'de düz metin olarak gösterilir, Rich markup olarak yorumlanmaz |
+| Uydurma (halüsinasyon) | Sistem talimatı yalnızca VERİ'ye dayanmayı, `null` değerleri "bilinmiyor" olarak ele almayı ve emin olunmayan noktaları belirtmeyi ister. Bilinmeyen değerler veride `null` olarak gider, asla "sorun yok" olarak değil |
+
+Gönderilecek veriyi görmek için: `pulseops ai explain --show-prompt` (hiçbir şey gönderilmez).

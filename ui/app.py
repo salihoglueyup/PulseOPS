@@ -11,7 +11,7 @@ from textual import events
 from collectors.base import BaseCollector
 from collectors.telemetry import summarize_alerts
 from logging_setup import get_logger
-from pulseops_config import AlertConfig
+from pulseops_config import AIConfig, AlertConfig
 from collectors.audit_exporter import export_audit_report, calculate_audit_score
 
 log = get_logger("ui")
@@ -80,6 +80,7 @@ class ServerTUIApp(App):
         Binding("slash", "toggle_search", "Ara (/)", show=True),
         Binding("e", "export_report", "Rapor (e)", show=True),
         Binding("h", "show_history", "Geçmiş (h)", show=True),
+        Binding("i", "ai_analysis", "AI (i)", show=True),
         Binding("r", "refresh_data", "Yenile (r)", show=True),
         Binding("q", "quit", "Çıkış (q)", show=True),
         Binding("ctrl+c", "quit", "Çıkış (Ctrl+C)", show=False, priority=True),
@@ -105,9 +106,11 @@ class ServerTUIApp(App):
         ascii_mode: bool = False,
         alert_thresholds: Optional[AlertConfig] = None,
         history=None,
+        ai_config: Optional[AIConfig] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.ai_config = ai_config or AIConfig()
         self.alert_thresholds = alert_thresholds
         # Optional HistoryStore: per-minute samples + drift detection on every slow poll
         self.history = history
@@ -543,6 +546,28 @@ class ServerTUIApp(App):
         from history import host_key
         from ui.modals.history_modal import HistoryModal
         self.push_screen(HistoryModal(self.history, host_key(self.telemetry), self.telemetry.snapshot.hostname))
+
+    def action_ai_analysis(self) -> None:
+        if not self.telemetry:
+            self.notify("Veriler henüz yüklenmedi.", timeout=2.0)
+            return
+        from ai import AIError, Conversation
+        from ui.modals.ai_modal import AIModal
+
+        changes = []
+        if self.history is not None:
+            import time
+            from history import host_key
+            try:
+                changes = self.history.changes(host_key(self.telemetry), since=time.time() - 86400, limit=20)
+            except Exception:
+                log.exception("Geçmiş okunamadı")
+        try:
+            conversation = Conversation(self.ai_config, self.telemetry, changes)
+        except AIError as e:
+            self.notify(str(e), title="AI", severity="error", timeout=8.0)
+            return
+        self.push_screen(AIModal(conversation, self.ai_config.model, self.telemetry.snapshot.hostname))
 
     def on_unmount(self) -> None:
         try:

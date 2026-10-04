@@ -18,6 +18,7 @@ EPILOG = """komutlar:
   pulseops history [--since]    kayıtlı trendler ve güvenlik değişiklikleri
   pulseops notify --test        bildirim kanallarını dene
   pulseops schedule install     check'i systemd zamanlayıcısıyla düzenli çalıştır
+  pulseops ai explain | ask     yerel AI (Ollama) ile SOC analizi ve soru-cevap
   pulseops update | uninstall   kendini günceller / kaldırır
   pulseops version              sürüm bilgisi
 """
